@@ -1,20 +1,21 @@
 ---
-title: "temp_練習用"
+title: "第2章"
 format: 
   html: 
     theme: journal
     highlight-style: pygments
     page-layout: article
 number-sections: true
+toc: true
 toc-depth: 3
 toc-location: left
 code-fold: show
-data: "最終更新: `r Sys.date()`"
+data: "最終更新: `r Sys.Date()`"
 ---
 
-```{r setup, include=false}
+```{r setup, include=FALSE}
 rm(list = ls())
-knitr::opts_chunk$set(cache = FALSE, eval = TRUE, fig.align = "center", warning = FALSE)
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "center", warning = FALSE)
 library(magrittr)
 library(ggplot2)
 library(kableExtra)
@@ -25,12 +26,12 @@ color_main <- scales::viridis_pal(option = "C")(1)
 
 # 無作為化実験
 
-## [2-1] フィッシャーのp値
+## \[2-1\] フィッシャーのp値
 
 参照：[因果推論の計量経済学（川口、澤田）：第10章　差の差法とその周辺の発展的トピック](https://github.com/keisemi/EconometriciansGuide_CausalInference/blob/main/main/difference_in_differences_multiperiods.html)
 
-
 パラメータの設定
+
 ```{r}
 set.seed(1)
 N <- 1000
@@ -39,6 +40,7 @@ N_1 <- 500
 ```
 
 母集団における平均処置効果`tau_population`の設定
+
 ```{r}
 tau_polulation <- 0.2
 ```
@@ -151,7 +153,7 @@ data.frame(
 
 <br>
 
-## [2-2]平均処置効果の推定 (平均の差)
+## \[2-2\]平均処置効果の推定 (平均の差)
 
 ```{r}
 set.seed(1)
@@ -161,6 +163,7 @@ N_1 <- 500
 ```
 
 平均処置効果`tau_populaiton`の設定。
+
 ```{r}
 tau_population <- 0.2
 ```
@@ -318,94 +321,152 @@ data.frame(
   kable_styling()
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<br>
+
+## \[2-3\]共変量の「統制」と回帰分析
+
+```{r}
+set.seed(1)
+N <- 10000
+N_1 <- 5000
+```
+
+母集団における平均処置効果`tau_population`の設定。
+
+```{r}
+tau_population <- 0.2
+```
+
+$Y_0^\ast(0) = \exp(x) - \exp(1/2)$ 
+
+$\mathbb{E}\{Y_0^\ast(0)\} = 0$
+
+```{r}
+outcome_potential <- 
+  tibble::tibble(
+    x = rnorm(N),
+    y_0 = rnorm(
+      N,
+      mean = exp(x) - exp(1/2),
+      sd = 1
+    ),
+    y_1 = rnorm(
+      N,
+      tau_population,
+      sd = 1
+    )
+  )
+
+tau <- 
+  outcome_potential %>% 
+  dplyr::summarise(
+    tau = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::pull(tau)
+
+outcome_potential %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+tau
+```
+
+```{r}
+data_realized <- 
+  generate_data_randomized(
+    outcome_potential = outcome_potential,
+    N_1 = N_1,
+    seed = 1
+  )
+
+data_realized %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized %>% 
+  modelsummary::datasummary_skim()
+```
+
+正しいモデルは $$
+Y_i = Z_i\tau + (1 - Z_i)[\exp(X_i) - \exp(1/2)] + \epsilon_i
+$$
+
+$$
+Y_i  = -\exp(1/2) + Z_i\tau + \dot{X}_i - Z_i\dot{X}_i + \epsilon_i
+$$
+
+```{r}
+result_ols <- 
+  c(
+    "y ~ z",
+    "y ~ z + x",
+    "y ~ z + exp(x)",
+    "y ~ z + x_dot + z:x_dot"
+  ) %>% 
+  purrr::map(as.formula) %>% 
+  purrr::map(
+    .,
+    ~ lm(
+      formula = .,
+      data = 
+        data_realized %>% 
+        dplyr::mutate(
+          x_dot = exp(x) - exp(1/2)
+        )
+    )
+  )
+```
+
+```{r}
+result_ols %>% 
+  modelsummary(
+    vcov = "HC2"
+  )
+```
+
+```{r}
+se_hetero <- 
+  result_ols %>% 
+  purrr::map(
+    .,
+    ~ data.frame(
+      data_realized,
+      residual = .$residuals,
+      df = .$df.residual
+    ) %>% 
+      dplyr::mutate(
+        z_bar = mean(z)
+      ) %>% 
+      dplyr::summarise(
+        v = 
+          sum(
+            (z - z_bar)^2 * residual^2 /
+              (z_bar * (1 - z_bar))^2
+            )
+        / (length(z) * mean(df))
+        ) %>%
+      dplyr::ungroup() %>% 
+      sqrt()
+    ) %>% 
+  dplyr::bind_rows()
+```
+
+```{r}
+data.frame(
+  model = c("共変量なし", "線形共変量", "指数共変量", "正しい定式化"),
+  "不均一分散頑健分散推定量" = se_hetero$v
+) %>% 
+ kbl() %>% 
+  kable_styling()
+```
