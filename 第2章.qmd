@@ -1,0 +1,24 @@
+---
+title: "temp_練習用"
+format: 
+  html: 
+    theme: journal
+    highlight-style: pygments
+    page-layout: article
+number-sections: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+data: "最終更新: `r Sys.date()`"
+---
+
+```{r setup, include=false}
+rm(list = ls())
+knitr::opts_chunk$set(cache = FALSE, eval = TRUE, fig.align = "center", warning = FALSE)
+library(magrittr)
+library(ggplot2)
+library(kableExtra)
+library(modelsummary)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
