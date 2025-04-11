@@ -23,4 +23,152 @@ library(CausalInferenceTextbook)
 color_main <- scales::viridis_pal(option = "C")(1)
 ```
 
-test test test
+# 無作為化実験
+
+参照：[因果推論の計量経済学（川口、澤田）：第10章　差の差法とその周辺の発展的トピック](https://github.com/keisemi/EconometriciansGuide_CausalInference/blob/main/main/difference_in_differences_multiperiods.html)
+
+
+パラメータの設定
+```{r}
+set.seed(1)
+N <- 1000
+R <- 1000
+N_1 <- 500
+```
+
+母集団における平均処置効果`tau_population`の設定
+```{r}
+tau_polulation <- 0.2
+```
+
+```{r}
+outcome_potential <- 
+  tibble::tibble(
+    y_0 = 
+      rnorm(N,
+            mean = 0,
+            sd = 1),
+    y_1 =
+      rnorm(N,
+            mean = tau_polulation,
+            sd = 1)
+  )
+
+tau <- 
+  outcome_potential %>% 
+  dplyr::summarise(
+    tau = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::pull(tau)
+
+outcome_potential %>% 
+  head() %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+tau
+```
+
+```{r}
+data_realized <- 
+  generate_data_randomized(
+    outcome_potential = outcome_potential,
+    N_1 = N_1,
+    seed = 1
+  )
+
+data_realized %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+t <- 
+  data_realized %>% 
+  dplyr::summarise(
+    t = mean(y * z) * 2 - mean(y * (1 - z)) * 2
+  ) %>% 
+  dplyr::pull(t)
+
+t
+```
+
+```{r}
+outcome_potential_null <- 
+  data_realized %>% 
+  dplyr::mutate(
+    y_0 = y,
+    y_1 = y
+  )
+
+t_distribution <- 
+  1:R %>% 
+  purrr::map(
+    .,
+    ~ generate_data_randomized(
+        outcome_potential = outcome_potential_null,
+        N_1 = N_1,
+        seed = .
+    ) %>% 
+      calculate_difference_in_means()
+  ) %>% 
+  purrr::reduce(c)
+
+pvalue <- 
+  mean(
+    abs(t_distribution) > abs(t)
+  )
+
+pvalue
+```
+
+```{r}
+data.frame(
+  statistics = abs(t_distribution)
+) %>% 
+  ggplot(
+    aes(x = statistics)
+  ) +
+  geom_density() +
+  geom_vline(xintercept = t, lty = 3, color = "blue") +
+  theme_classic()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
