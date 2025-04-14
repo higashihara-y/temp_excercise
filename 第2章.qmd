@@ -474,7 +474,7 @@ data.frame(
 
 <br>
 
-## \[2-3\]共変量の「統制」と回帰分析
+## \[2-4\]層化無作為化実験
 
 ```{r}
 set.seed(1)
@@ -633,6 +633,380 @@ data.frame(
     color = color_main) +
   theme_classic()
 ```
+
+<br>
+
+## [2-5]クラスター化無作為化実験
+
+```{r}
+set.seed(1)
+G <- 100
+N_g <- 
+  rpois(G, 99) + 1
+N <- sum(N_g)
+G_1 <- 50
+```
+
+母集団における各クラスターの平均処置効果`tau_g_population`
+```{r}
+tau_g_population <- 
+  abs(rnorm(G))
+
+tau_g_population
+```
+
+```{r}
+tau_population <- 
+  sum(
+    tau_g_population * N_g / N
+  )
+
+tau_population
+```
+
+```{r}
+tau_c_populaiton <- 
+  mean(tau_g_population)
+
+tau_c_populaiton
+```
+
+```{r}
+outcome_potential <- 
+  1:G %>% 
+  purrr::map(
+    .,
+    ~ tibble::tibble(
+        g = .,
+        y_0 = 
+          rnorm(
+            N_g[.],
+            mean = 0,
+            sd = 1
+        ),
+        y_1 = 
+          rnorm(
+            N_g[.],
+            mean = tau_g_population[.],
+            sd = 1
+            )
+        )
+  ) %>% 
+  dplyr::bind_rows()
+
+outcome_potential %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+tau_g <- 
+  outcome_potential %>% 
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    tau = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_g
+```
+
+```{r}
+tau <- 
+  outcome_potential %>% 
+  dplyr::summarise(
+    tau = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau
+```
+
+```{r}
+tau_c <- mean(tau_g)
+tau_c
+```
+
+```{r}
+generate_data_cluster2 <- 
+  function(
+    outcome_potential,
+    G_1,
+    seed
+  ) {
+    set.seed(seed)
+    z <- 
+      sample(
+        unique(
+          outcome_potential$g
+        ),
+        G_1
+        )
+    data_realized <- 
+      outcome_potential %>% 
+      dplyr::group_by(g) %>% 
+      dplyr::mutate(
+        z =
+          g %in% z %>% 
+          as.integer(),
+        y = 
+          y_0 * (1 - z) +
+          y_1 * z
+      ) %>% 
+      dplyr::ungroup() %>% 
+      dplyr::select(
+        - y_0,
+        - y_1
+      ) %>% 
+      return(data_realized)
+  }
+
+data_realized <- 
+  generate_data_cluster2(
+    outcome_potential = outcome_potential,
+    G_1 = G_1,
+    seed = 1
+  )
+
+data_realized %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+平均の差による$\hat{\tau}_c$
+```{r}
+tau_c_hat <- 
+  data_realized %>%
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    z = mean(z),
+    y = mean(y)
+  ) %>% 
+  dplyr::summarise(
+    tau = 
+      sum(y * z) / 
+      sum(z) -
+      sum(y * (1 - z)) / 
+      sum(1 - z)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_c_hat
+```
+
+$\hat{\tau}_c$の標準誤差
+```{r}
+tau_c_hat_se <- 
+  data_realized %>% 
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    z = mean(z),
+    y = mean(y)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(z) %>% 
+  dplyr::summarise(
+    G_z = length(y),
+    variance = 
+      sum(
+        (y - mean(y))^2 / 
+        (G_z - 1)
+        )
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::summarise(
+    se = 
+      sum(
+        variance / G_z
+      ) %>% 
+      sqrt()
+  )
+
+tau_c_hat_se
+```
+
+回帰分析による$\hat{\tau}_c$
+```{r}
+tau_c_hat_regression <- 
+  data_realized %>% 
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    z = mean(z),
+    y = mean(y)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  )
+
+tau_c_hat_regression %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+平均の差による$\hat{\tau}$
+```{r}
+tau_hat <- 
+  data_realized %>% 
+  dplyr::summarise(
+    tau = 
+      sum(y * z) /
+      sum(z) -
+      sum(y * (1 - z)) / 
+      sum(1 - z)
+  )
+
+tau_hat
+```
+
+```{r}
+tau_hat_regression <- 
+  data_realized %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  )
+
+tau_hat_regression %>% 
+  modelsummary(
+    vcov = ~ g,
+    fmt = 6
+  )
+
+tau_hat_regression2 <- 
+  data_realized %>% 
+  estimatr::lm_robust(
+    data = .,
+    formula = y ~ z,
+    clusters = g,
+    se_type = "stata"
+  )
+
+tau_hat_regression2 %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+se_cluster_robust <- 
+  data_realized %>% 
+  dplyr::mutate(
+    constant = 1,
+    epsilon = tau_hat_regression$residuals
+  )
+
+term1 <- 
+  se_cluster_robust %>% 
+  dplyr::select(
+    constant,
+    z
+  ) %>% 
+  as.matrix()
+
+term1 <- 
+  crossprod(
+    term1,
+    term1
+  )
+```
+
+```{r}
+term2 <- 
+  se_cluster_robust %>% 
+  dplyr::group_split(g) %>% 
+  purrr::map(
+    .,
+    function(df) {
+      df <- 
+        df %>% 
+        dplyr::mutate(
+          z_epsilon = z * epsilon
+        ) %>% 
+        dplyr::select(
+          epsilon,
+          z_epsilon
+        ) %>% 
+        dplyr::summarise_all(sum) %>% 
+        as.matrix()
+      
+      df <- 
+        crossprod(
+          df,
+          df
+        )
+    }
+  ) %>% 
+  purrr::reduce(`+`)
+```
+
+```{r}
+se_cluster_robust <- 
+  solve(
+    term1,
+    term2
+  ) %*%
+  solve(term1)
+
+se_cluster_robust %>% 
+  diag() %>% 
+  sqrt()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
