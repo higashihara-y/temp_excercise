@@ -1,0 +1,381 @@
+---
+title: "第3章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show #code-fold:showでコードの折り畳みが可能
+date: "最終更新: `r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "center", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(clubSandwich)
+library(foreach)
+library(kableExtra)
+library(modelsummary)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "D")(1)
+```
+
+```{r include=FALSE}
+library(fwildclusterboot)
+```
+
+```{r}
+set.seed(1)
+dqrng::dqset.seed(1)
+```
+
+```{r}
+N <- 50
+N_C <- 100
+N_M <- 500
+N_B <- 999
+```
+
+```{r}
+data_large_cluster <- 
+  return_dgp_cluster(
+    N = N,
+    N_C = N_C
+  )
+```
+
+```{r}
+lm_fit <- 
+  lm(Y ~ X,
+     data = data_large_cluster)
+
+t_HC <- 
+  summary(lm_fit)$coefficients[2, 1] /
+  sqrt(sandwich::vcovHC(lm_fit, type = "HC")[2, 2])
+
+cat("Heteroskedasticity-robust t-statistics",
+    t_HC,
+    "\n")
+
+estimatr::lm_robust(
+    Y ~ X,
+    data = data_large_cluster,
+    se_type = "stata"
+  ) %>% 
+  summary(.)
+
+```
+
+```{r}
+vc_cr0 <- 
+  clubSandwich::vcovCR(
+    lm_fit,
+    cluster = data_large_cluster$C,
+    type = "CR0"
+  )
+
+vc_cr3 <- 
+  clubSandwich::vcovCR(
+    lm_fit,
+    cluster = data_large_cluster$C,
+    type = "CR3"
+  )
+
+cat(
+  "Cluster-robust t_value, CR0",
+  clubSandwich::coef_test(
+    lm_fit,
+    vcov = vc_cr0,
+    coefs = "X"
+  )$p_Satt,
+  "\n"
+)
+```
+
+```{r}
+cat(
+  "Cluster-robust p_value, CR3",
+  clubSandwich::coef_test(
+    lm_fit,
+    vcov = vc_cr3,
+    coefs = "X"
+  )$p_Satt,
+  "\n"
+)
+```
+
+```{r}
+p_val_w <- 
+  fwildclusterboot::boottest(
+    object = lm_fit,
+    clustid = "C",
+    param = "X",
+    B = N_B,
+    type = "webb"
+  )$p_val
+
+cat("Wild cluster-bootstrap p_value",
+    p_val_w,
+    "\n")
+```
+
+```{r cache=TRUE}
+t_w <- 
+  rep(NA, N_M)
+
+t_cr0 <- 
+  rep(NA, N_M)
+
+t_cr3 <- 
+  rep(NA, N_M)
+
+p_cr_w <- 
+  rep(NA, N_M)
+
+for(
+  i in 1:N_M
+) {
+  data_large_cluster <- 
+    return_dgp_cluster(
+      N = N,
+      N_C = N_C
+    )
+  lm_fit <- 
+    lm(
+      Y ~ X,
+      data = data_large_cluster
+    )
+  t_w[i] <- summary(lm_fit)$coefficients[2, 3]
+  
+  vc_cr0 <- 
+    clubSandwich::vcovCR(
+      lm_fit,
+      cluster = data_large_cluster$C,
+      type = "CR0"
+    )
+  vc_cr3 <- 
+    clubSandwich::vcovCR(
+      lm_fit,
+      cluster = data_large_cluster$C,
+      type = "CR3"
+    )
+  
+  t_cr0[i] <- 
+    clubSandwich::coef_test(
+      lm_fit,
+      vcov = vc_cr0,
+      coefs = "X",
+    )$tstat
+  
+  t_cr3[i] <- 
+    clubSandwich::coef_test(
+      lm_fit,
+      vcov = vc_cr3,
+      coefs = "X"
+    )$tstat
+  
+  invisible(
+    capture.output(
+      boot_lm <- 
+        fwildclusterboot::boottest(
+          object = lm_fit,
+          clustid = "C",
+          param = "X",
+          B = N_B,
+          type = "webb"
+        )
+    )
+  ) 
+  
+  invisible(
+    capture.output(
+      p_cr_w[i] <- boot_lm$p_val
+    )
+  )
+}
+```
+
+```{r}
+result_large <- 
+  tibble::tibble(
+    specifications = c(
+       "Heteroskedasticity-robust",
+      "Cluster-robust CR0",
+      "Cluster-robust CR3",
+      "Wild Cluster Bootstrap"
+    ),
+    rejection_probability = c(
+      mean(abs(t_w) >= 1.965, na.rm = TRUE),
+      mean(abs(t_cr0) >= 1.965, na.rm = TRUE),
+      mean(abs(t_cr3) >= 1.965, na.rm = TRUE),
+      mean(p_cr_w < 0.05, na.rm = TRUE)
+    )
+  )
+
+result_large
+```
+
+```{r}
+set.seed(1)
+dqrng::dqset.seed(1)
+```
+
+```{r}
+N <- 100
+N_C <- 8
+N_M <- 500
+N_B <- 999
+```
+
+```{r cache=TRUE}
+t_w <- 
+  rep(NA, N_M)
+t_cr0 <- 
+  rep(NA, N_M)
+t_cr3 <- 
+  rep(NA, N_M)
+p_cr_w <- 
+  rep(NA, N_M)
+
+for(
+  i in 1:N_M
+) {
+  data_extreme_small_cluster <- 
+    return_dgp_cluster(
+      N = N,
+      N_C = N_C
+    )
+  
+  lm_fit <- 
+    lm(Y ~ X,
+       data = data_extreme_small_cluster)
+  
+  t_w[i] <- summary(lm_fit)$coefficients[2, 3]
+  
+  vc_cr0 <- 
+    clubSandwich::vcovCR(
+      lm_fit,
+      cluster = data_extreme_small_cluster$C,
+      type = "CR0"
+    )
+  
+  vc_cr3 <- 
+    clubSandwich::vcovCR(
+      lm_fit,
+      cluster = data_extreme_small_cluster$C,
+      type = "CR3"
+    )
+  
+  t_cr0[i] <- 
+    clubSandwich::coef_test(
+      lm_fit,
+      vcov = vc_cr0,
+      coefs = "X"
+    )$tstat
+  
+  t_cr3[i] <- 
+    clubSandwich::coef_test(
+      lm_fit,
+      vcov = vc_cr3,
+      coefs = "X"
+    )$tstat
+  
+  invisible(
+    capture.output(
+      boot_lm <- 
+        fwildclusterboot::boottest(
+          object = lm_fit,
+          clustid = "C",
+          param = "X",
+          B = N_B,
+          type = "webb"
+        )
+    )
+  )
+  
+  invisible(
+    capture.output(
+      p_cr_w[i] <- boot_lm$p_val
+    )
+  )
+}
+```
+
+```{r}
+result_extremely_small <- 
+  tibble::tibble(
+    specifications = c(
+      "Heteroskedasticity-robust",
+      "Cluster-robust CR0",
+      "Cluster-robust CR3",
+      "Wild Cluster Bootstrap"
+    ),
+    rejection_probability = c(
+      mean(abs(t_w) >= 1.965, na.rm = TRUE),
+      mean(abs(t_cr0) >= 1.965, na.rm = TRUE),
+      mean(abs(t_cr3) >= 1.965, na.rm = TRUE),
+      mean(p_cr_w < 0.05, na.rm = TRUE)
+    )
+  )
+
+result_extremely_small
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
