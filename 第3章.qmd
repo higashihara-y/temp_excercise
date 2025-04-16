@@ -29,6 +29,8 @@ color_main <- scales::viridis_pal(option = "D")(1)
 library(fwildclusterboot)
 ```
 
+# [3-1]クラスターブートストラップ
+
 ```{r}
 set.seed(1)
 dqrng::dqset.seed(1)
@@ -326,28 +328,768 @@ result_extremely_small <-
 result_extremely_small
 ```
 
+<br>
+
+# [3-2]多重検定: FWER制御
+
+```{r}
+N <- 300
+M <- 30
+M_F <- 10
+L <- 100
+alpha <- 0.05
+```
+
+```{r}
+z_allnull <- 
+  runif(N) >= 0.5
+
+df_list_allnull <- 
+  seq_len(M) %>% 
+  purrr::map(
+    ~ tibble::tibble(
+      z = z_allnull,
+      y = rnorm(N)
+    )
+  )
+```
+
+```{r}
+result_list_allnull <- 
+  df_list_allnull %>% 
+  purrr::map(
+    .,
+    ~ lm(formula = y ~ z,
+         data = .)
+  )
+
+t_list_allnull <- 
+  result_list_allnull %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "t value"]
+  ) %>% 
+  purrr::reduce(c)
+
+p_list_allnull <- 
+  result_list_allnull %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "Pr(>|t|)"]
+  ) %>% 
+  purrr::reduce(c)
+```
+
+```{r}
+ggplot(
+  mapping = 
+    aes(x = seq_along(t_list_allnull),
+        y = abs(t_list_allnull) %>% sort())
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = 
+      qt(1 - alpha / 2,
+         df = N - 2),
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値"
+  ) +
+  theme_classic()
+  
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(p_list_allnull),
+    y = p_list_allnull %>% sort()
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha,
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値"
+  ) + 
+  theme_classic()
+```
+
+```{r}
+t_list_allnull %>% 
+  abs() %>% 
+  .[. > qt(
+    1 - alpha / 2,
+    df = N - 2
+  )]
+```
+
+```{r}
+z_somealt <- 
+  runif(N) >= 0.5
+
+df_list_null_somealt <- 
+  seq_len(M - M_F) %>% 
+  purrr::map(
+    ~ tibble::tibble(
+      z = z_somealt,
+      y = rnorm(N)
+    )
+  )
+
+df_list_alternative_somealt <- 
+  seq_len(M_F - 2) %>% 
+  purrr::map(
+    ~ tibble::tibble(
+      z = z_somealt,
+      y = rnorm(N) + 0.3 * z_somealt
+    )
+  )
+
+df_list_alternative_somealt <- c(
+  df_list_alternative_somealt,
+  seq(M_F - 1, M_F) %>% 
+    purrr::map(
+      ~ tibble::tibble(
+        z = z_somealt,
+        y = rnorm(N) + 0.5 * z_somealt
+      )
+    )
+)
+```
+
+```{r}
+result_list_null_somealt <- 
+  df_list_null_somealt %>% 
+  purrr::map(
+    ~ lm(
+        formula = y ~ z,
+        data = .
+    )
+  )
+
+result_list_alternative_somealt <- 
+  df_list_alternative_somealt %>% 
+  purrr::map(
+    ~ lm(
+        formula = y ~ z,
+        data = .
+    )
+  )
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(p_list_allnull),
+    y = p_list_allnull %>% sort()
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha / M,
+    lty = 3
+    ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "P値"
+  ) +
+  theme_classic()
+```
+
+```{r}
+p_list_allnull %>% 
+  .[. < (alpha / M)]
+```
+
+```{r}
+p.adjust(
+  p_list_allnull,
+  method = "bonferroni"
+) %>% 
+  .[. < alpha]
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(t_list_allnull),
+    y = abs(t_list_allnull) %>% sort()
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = qt(
+      1 - alpha / (2 * M),
+      df = N - 2
+    ),
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値"
+  ) + 
+  theme_classic()
+```
+
+```{r}
+t_list_allnull %>% 
+  abs() %>% 
+  .[. >
+      qt(1 - alpha / (2 * M),
+         df = N - 2)]
+```
+
+```{r}
+t_list_allnull_all <- 
+  seq_len(L) %>% 
+  purrr::map(
+    ~ compute_t_statistics_null_effect(
+        N = N,
+        M = M,
+        alpha = alpha,
+        seed = .
+    )
+  )
+```
+
+```{r}
+t_rejected_allnull_all <- 
+  t_list_allnull_all %>% 
+  purrr::map(
+    function(t_list_allnull) {
+      length_rejected <- 
+        t_list_allnull %>% 
+        abs() %>% 
+        .[. > qt(1 - alpha / 2,
+                 df = N - 2)] %>% 
+        length()
+      return(length_rejected > 0)
+    }
+  ) %>% 
+  purrr::reduce(c)
+
+fwer_allnull <- 
+  sum(t_rejected_allnull_all) /
+  length(t_rejected_allnull_all)
+
+fwer_allnull
+```
+
+```{r}
+t_rejected_allnull_bonferroni_all <- 
+  t_list_allnull_all %>% 
+  purrr::map(
+    function(t_list_allnull) {
+      length_rejected <- 
+        t_list_allnull %>% 
+        abs() %>% 
+        .[. > qt(1 - alpha / (2 * M),
+                 df = N - 2)] %>% 
+        length()
+      return(length_rejected > 0)
+    }
+  ) %>% 
+  purrr::reduce(c)
+
+fwer_allnull_bonferroni <- 
+  sum(t_rejected_allnull_bonferroni_all) / 
+  length(t_rejected_allnull_bonferroni_all)
+
+fwer_allnull_bonferroni
+```
+
+```{r}
+t_list_somealt_null <- 
+  result_list_null_somealt %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "t value"]
+  ) %>% 
+  purrr::reduce(c)
+
+t_list_somealt_alternative <- 
+  result_list_alternative_somealt %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "t value"]
+  ) %>% 
+  purrr::reduce(c)
+
+t_list_somealt <- c(
+  t_list_somealt_null,
+  t_list_somealt_alternative
+)
+```
+
+```{r}
+null_list_somealt <- c(
+  rep(
+    "null",
+    length = length(t_list_somealt_null)
+  ),
+  rep("alternative",
+      length = length(t_list_somealt_alternative))
+)
+```
+
+```{r}
+p_list_somealt_null <- 
+  result_list_null_somealt %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "Pr(>|t|)"]
+  ) %>% 
+  purrr::reduce(c)
+
+p_list_somealt_alternative <- 
+  result_list_alternative_somealt %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "Pr(>|t|)"]
+  ) %>% 
+  purrr::reduce(c)
+
+p_list_somealt <- c(
+  p_list_somealt_null,
+  p_list_somealt_alternative
+)
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(t_list_somealt),
+    y = t_list_somealt[t_list_somealt %>% abs() %>% order()] %>% abs(),
+    color = null_list_somealt[t_list_somealt %>% abs() %>% order()]
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = qt(
+      1 - alpha / 2,
+      df = N - 2
+    ),
+    color = color_main,
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値",
+    color = "帰無仮説であるか否か"
+  ) +
+  scale_color_viridis_d() +
+  theme_classic()
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(p_list_somealt),
+    y = p_list_somealt[p_list_somealt %>% order()],
+    color = null_list_somealt[p_list_somealt %>% order()]
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha,
+    color = color_main,
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値",
+    color = "帰無仮説であるか否か"
+  ) +
+  scale_color_viridis_d() +
+  theme_classic()
+```
+
+```{r}
+p_rejected_somealt <- 
+  p_list_somealt_alternative %>% 
+  .[. < alpha]
+
+p_rejected_somealt
+```
+
+```{r}
+p_rejected_somealt_false <- 
+  p_list_somealt_null %>% 
+  .[. < alpha]
+
+p_rejected_somealt_false
+```
+
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(t_list_somealt),
+    y = t_list_somealt[t_list_somealt %>% abs() %>% order()] %>% abs(),
+    color = null_list_somealt[t_list_somealt %>% abs() %>% order()]
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = qt(
+      1 - alpha / (2 * M),
+      df = N - 2
+    ),
+    color = color_main,
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値",
+    color = "帰無仮説であるか否か"
+  ) +
+  scale_color_viridis_d() +
+  theme_classic()
+```
+
+```{r}
+t_rejected_sumealt_bonferroni <- 
+  t_list_somealt_alternative %>% 
+  .[. > qt(
+    1 - alpha / (2 * M),
+    df = N - 2
+  )]
+
+t_rejected_sumealt_bonferroni
+```
+
+```{r}
+t_rejected_sumealt_bonferroni <- 
+  t_list_somealt_null %>% 
+  .[. > qt(
+    1 - alpha / (2 * M),
+    df = N - 2
+  )]
+
+t_rejected_sumealt_bonferroni
+```
 
 
+```{r}
+ggplot(
+  mapping = aes(
+    x = seq_along(p_list_somealt),
+    y = p_list_somealt[p_list_somealt %>% order()],
+    color = null_list_somealt[p_list_somealt %>% order()]
+  )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha / M,
+    color = color_main,
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値",
+    color = "帰無仮説であるか否か"
+  ) +
+  scale_color_viridis_d() +
+  theme_classic()
+```
 
+```{r}
+p_rejected_somealt_bonferroni <- 
+  p_list_somealt_alternative %>%
+  sort() %>% 
+  .[. < alpha / M]
 
+p_rejected_somealt_bonferroni
+```
 
+```{r}
+p_rejected_somealt_bonferroni <- 
+  p_list_somealt_null %>%
+  sort() %>% 
+  .[. < alpha / M]
 
+p_rejected_somealt_bonferroni
+```
 
+```{r}
+t_list_somealt_null <- 
+  seq_len(L) %>% 
+  purrr::map(
+    ~ compute_t_statistics_null_effect(
+        N = N,
+        M = M - M_F,
+        alpha = alpha,
+        seed = .
+    )
+  )
 
+t_list_somealt_alternative <- 
+  seq_len(L) %>% 
+  purrr::map(
+    ~ compute_t_statistics_alternative_effect(
+        N = N,
+        M = M_F,
+        alpha = alpha,
+        seed = .
+    )
+  )
+```
 
+```{r}
+t_rejected_somealt_null <- 
+  t_list_somealt_null %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        .[. > qt(
+          1 - alpha / 2,
+          df = N - 2
+        )] %>% 
+        length()
+      return(length_rejected > 0)
+    }
+  ) %>% 
+  purrr::reduce(c)
 
+fwer_somealt <- 
+  sum(t_rejected_somealt_null) / 
+  length(t_rejected_somealt_null)
 
+fwer_somealt
+```
 
+```{r}
+t_rejected_somealt_bonferroni_null <- 
+  t_list_somealt_null %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        .[. > qt(
+          1 - alpha / (2 * M),
+          df = N - 2
+        )] %>% 
+        length()
+      return(length_rejected > 0)
+    }
+  ) %>% 
+  purrr::reduce(c)
 
+fwer_somealt_bonferroni <- 
+  sum(t_rejected_somealt_bonferroni_null) / 
+  length(t_rejected_somealt_bonferroni_null)
 
+fwer_somealt_bonferroni
+```
 
+```{r}
+t_rejected_somealt_alternative <- 
+  t_list_somealt_alternative %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        .[. > qt(
+          1 - alpha / 2,
+          df = N - 2
+        )] %>% 
+        length()
+      return(length_rejected)
+    }
+  ) %>% 
+  purrr::reduce(c)
 
+power_somealt <- 
+  sum(t_rejected_somealt_alternative) /
+  (
+    length(t_list_somealt_alternative) * 
+      length(t_list_somealt_alternative[[1]])
+    )
 
+power_somealt
+```
 
+```{r}
+t_rejected_somealt_bonferroni_alternative <- 
+  t_list_somealt_alternative %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        .[. > qt(
+          1 - alpha / (2 * M),
+          df = N - 2
+        )] %>% 
+        length()
+      return(length_rejected)
+    }
+  ) %>% 
+  purrr::reduce(c)
 
+power_somealt_bonferroni <- 
+  sum(t_rejected_somealt_bonferroni_alternative) /
+  (
+    length(t_list_somealt_alternative) * 
+      length(t_list_somealt_alternative[[1]])
+    )
 
+power_somealt_bonferroni
 
+```
 
+```{r}
+ggplot(
+  mapping = 
+    aes(
+      x = seq_along(p_list_somealt),
+      y = p_list_somealt[p_list_somealt %>% order()],
+      color = null_list_somealt[p_list_somealt %>% order()]
+    )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha,
+    color = "red"
+  ) +
+  geom_line(
+    mapping = 
+      aes(
+        x = seq_along(p_list_somealt),
+        y = alpha / (M - seq_along(p_list_somealt) + 1)
+      ),
+    color = "blue"
+  ) +
+  scale_color_viridis_d() +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値",
+    color = "帰無仮説であるか否か"
+  ) +
+  theme_classic()
+```
+
+```{r}
+p_rejected_somealt_bonferroni_holm <- 
+  p_list_somealt_alternative %>% 
+  sort()
+
+index <- (
+  p_rejected_somealt_bonferroni_holm <=
+    alpha / (M - seq_along(p_list_somealt) + 1)
+)
+
+index <- 
+  index %>% 
+  cummin() %>% 
+  as.logical()
+
+p_rejected_somealt_bonferroni_holm <- 
+  p_rejected_somealt_bonferroni_holm[index]
+
+p_rejected_somealt_bonferroni_holm
+```
+
+```{r}
+p_rejected_somealt_false_bonferroni_holm <- 
+  p_list_somealt_null %>% 
+  sort()
+
+index <- 
+  p_rejected_somealt_false_bonferroni_holm <=
+  alpha / (M - seq_along(p_rejected_somealt_false_bonferroni_holm) + 1)
+
+index <- 
+  index %>% 
+  cummin() %>% 
+  as.logical()
+
+p_rejected_somealt_false_bonferroni_holm <- 
+  p_rejected_somealt_false_bonferroni_holm[index]
+
+p_rejected_somealt_false_bonferroni_holm
+```
+
+```{r}
+p_adjusted_somealt_bonferroni_holm <- 
+  p.adjust(
+    p = p_list_somealt,
+    method = "holm"
+  )
+
+p_adjusted_somealt_bonferroni_holm %>% 
+  format(digits = 1, scientific = FALSE)
+```
+
+```{r}
+t_rejected_somealt_bonferroni_holm_null <- 
+  t_list_somealt_null %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        sort(decreasing = TRUE) %>% 
+        .[. > 
+            qt(1 - alpha / (2 * (M - seq_along(t_list_somealt) + 1)),
+               df = N - 2)
+        ] %>% 
+        length()
+      return(length_rejected > 0)
+    }
+  ) %>% 
+  purrr::reduce(c)
+
+FWER_somealt_bonferroni_holm <- 
+  sum(t_rejected_somealt_bonferroni_holm_null) / 
+  length(t_rejected_somealt_bonferroni_holm_null)
+
+FWER_somealt_bonferroni_holm
+```
+
+```{r}
+t_rejected_somealt_bonferonni_holm_alternative <- 
+  t_list_somealt_alternative %>% 
+  purrr::map(
+    function(t_list_somealt) {
+      length_rejected <- 
+        t_list_somealt %>% 
+        abs() %>% 
+        sort(decreasing = TRUE) %>% 
+        .[. >
+            qt(1 - alpha / (2 * (M - seq_along(t_list_somealt) + 1)),
+               df = N - 2)
+          ] %>% 
+        length()
+      return(length_rejected)
+    }
+  ) %>% 
+  purrr::reduce(c)
+
+power_somealt_bonferroni_holm <- 
+  sum(t_rejected_somealt_bonferonni_holm_alternative) /
+  (
+    length(t_list_somealt_alternative) * 
+      length(t_list_somealt_alternative[[1]])
+  )
+
+power_somealt_bonferroni_holm
+```
 
 
 
