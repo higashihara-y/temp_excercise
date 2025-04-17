@@ -1091,9 +1091,418 @@ power_somealt_bonferroni_holm <-
 power_somealt_bonferroni_holm
 ```
 
+<br>
 
+# [3-4]多重検定: FDR制御
 
+```{r}
+set.seed(1)
+N <- 500
+M <- 60
+M_0 <- 45
+L <- 100
+alpha <- 0.05
+tau_population <- 0.2
+```
 
+```{r}
+z <- runif(N) >= 0.5
+
+df_list_1 <-
+  seq_len(M - M_0) %>%
+  purrr::map(
+    ~ tibble::tibble(
+        z = z,
+        y = rnorm(N) + tau_population * z
+      )
+  ) 
+df_list_0 <-
+  seq_len(M_0) %>%
+  purrr::map(
+    ~ tibble::tibble(
+        z = z,
+        y = rnorm(N)
+      )
+  )
+df_list <-
+  c(
+    df_list_1, 
+    df_list_0
+  )
+```
+
+```{r}
+result_list_1 <-
+  df_list_1 %>%
+  purrr::map(
+    ~ lm(
+        formula = y ~ z, 
+        data = .
+      )
+  )
+result_list_0 <-
+  df_list_0 %>%
+  purrr::map(
+    ~ lm(
+        formula = y ~ z, 
+        data = .
+      )
+  )
+```
+
+```{r}
+t_list_1 <- 
+  result_list_1 %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "t value"]
+  ) %>% 
+  purrr::reduce(c)
+
+t_list_0 <- 
+  result_list_0 %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "t value"]
+  ) %>% 
+  purrr::reduce(c)
+```
+
+```{r}
+p_list_1 <- 
+  result_list_1 %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "Pr(>|t|)"]
+  ) %>% 
+  purrr::reduce(c)
+
+p_list_0 <- 
+  result_list_0 %>% 
+  purrr::map(
+    ~ summary(.) %>% 
+      coef() %>% 
+      .["zTRUE", "Pr(>|t|)"]
+  ) %>% 
+  purrr::reduce(c)
+```
+
+```{r}
+ggplot(
+  mapping = 
+    aes(x = seq_along(t_list_1),
+        y = t_list_1 %>% abs() %>% sort())
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = qt(
+      1 - alpha / 2,
+      df = N - 2
+    ),
+    color = "red",
+    lty = 2
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(
+  mapping = 
+    aes(
+      x = seq_along(p_list_1),
+      y = p_list_1 %>% abs() %>% sort()
+    )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha,
+    color = "red",
+    lty = 2
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(
+  mapping = 
+    aes(x = seq_along(t_list_0),
+        y = t_list_0 %>% abs() %>% sort())
+) + 
+  geom_point() +
+  geom_hline(
+    yintercept = 
+      qt(1 - alpha / 2,
+         df = N - 2),
+    color = "red",
+    lty = 2
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "検定統計量の絶対値"
+  ) +
+  theme_classic()
+```
+
+```{r}
+ggplot(
+  mapping = 
+    aes(
+      x = seq_along(p_list_0),
+      y = p_list_0 %>% sort()
+    )
+) +
+  geom_point() +
+  geom_hline(
+    yintercept = alpha,
+    color = "red",
+    lty = 3
+  ) +
+  labs(
+    x = "検定統計量の順位",
+    y = "p値"
+  ) +
+  theme_classic()
+```
+
+```{r}
+t_list_rejected_1 <- 
+  t_list_1 %>% 
+  .[abs(.) >
+      qt(
+        1 - alpha / 2,
+        df = N - 2
+      )]
+
+t_list_rejected_1
+```
+
+```{r}
+t_list_rejected_0 <- 
+  t_list_0 %>% 
+  .[abs(.) >
+      qt(
+        1 - alpha / 2,
+        df = N - 2
+      )]
+
+t_list_rejected_0
+```
+
+```{r}
+fdr <- 
+  length(t_list_rejected_0) /
+  (
+    length(t_list_rejected_0) +
+      length(t_list_rejected_1)
+  )
+
+fdr
+```
+
+```{r}
+p_list_sorted <- 
+  c(
+    p_list_1,
+    p_list_0
+  ) %>% 
+  sort()
+
+i <- M
+
+flag_continue <- TRUE
+
+while (
+  flag_continue & i > 1
+) {
+  test <- 
+    p_list_sorted[i] <= (i / M) * alpha
+  if (
+    test
+  ) {
+    flag_continue <- FALSE
+  }
+  i <- i - 1
+} 
+
+i
+```
+
+```{r}
+p_list_sorted[i]
+```
+
+```{r}
+p_list_rejected_benjamini_hotchberg_1 <- 
+  p_list_1[
+    p_list_1 <= p_list_sorted[i]
+  ]
+
+p_list_rejected_benjamini_hotchberg_1
+```
+
+```{r}
+p_list_rejected_benjamini_hotchberg_0 <- 
+  p_list_0[
+    p_list_0 <= p_list_sorted[i]
+  ]
+
+p_list_rejected_benjamini_hotchberg_0
+```
+
+```{r}
+fdr_benjamini_hotchberg <- 
+  length(p_list_rejected_benjamini_hotchberg_0) /
+  (
+    length(p_list_rejected_benjamini_hotchberg_0) +
+      length(p_list_rejected_benjamini_hotchberg_1)
+  )
+
+fdr_benjamini_hotchberg
+```
+
+```{r}
+p_list_all <- 
+  seq_len(L) %>% 
+  purrr::map(
+    ~ compute_p_value_mixed_effect(
+      N = N,
+      M = M,
+      M_0 = M_0,
+      seed = .
+    )
+  )
+```
+
+```{r}
+p_value_all <- 
+  p_list_all %>% 
+  purrr::map(
+    ~ compute_p_value_benjamini_hotchberg(
+      p_list_1 = p_list_1,
+      p_list_0 = p_list_0,
+      alpha = alpha
+    )
+  )
+```
+
+```{r}
+fdr_expected <- 
+  purrr::map2(
+    p_list_all,
+    p_value_all,
+    ~ compute_fdr(
+        p_list_1 = .x$p_list_1,
+        p_list_0 = .x$p_list_0,
+        p_value = .y
+    )
+  ) %>% 
+  purrr::reduce(c) %>% 
+  mean(na.rm = TRUE)
+
+fdr_expected
+```
+
+```{r}
+p_list_sorted <- 
+  c(
+    p_list_1,
+    p_list_0
+  ) %>% 
+  sort()
+
+i <- M
+flag_continue <- TRUE
+
+while (
+  flag_continue & i > 1
+) {
+  test <- 
+    (
+      p_list_sorted[i] <= (1 / M) * alpha / sum(1 / seq_len(M))
+    )
+  if (
+    test
+  ) {
+    flag_continue <- FALSE
+  }
+  i <-  i - 1
+}
+
+i
+```
+
+```{r}
+p_list_sorted[i]
+```
+
+```{r}
+p_list_rejected_benjamini_yekutieli_1 <- 
+  p_list_1[
+    p_list_1 <= p_list_sorted[i]
+  ]
+
+p_list_rejected_benjamini_yekutieli_1
+```
+
+```{r}
+p_list_rejected_benjamini_yekutieli_0 <- 
+  p_list_0[
+    p_list_0 <= p_list_sorted[i]
+  ]
+
+p_list_rejected_benjamini_yekutieli_0
+```
+
+```{r}
+fdr_benjamini_yekutieli <- 
+  length(p_list_rejected_benjamini_yekutieli_0) /
+  (
+    length(p_list_rejected_benjamini_yekutieli_0) + 
+      length(p_list_rejected_benjamini_yekutieli_1)
+  )
+
+fdr_benjamini_yekutieli
+```
+
+```{r}
+p_value_all <- 
+  p_list_all %>% 
+  purrr::map(
+    ~ compute_p_value_benjamini_yekutieli(
+      p_list_1 = .$p_list_1,
+      p_list_0 = .$p_list_0,
+      alpha = alpha
+    )
+  )
+```
+
+```{r}
+fdr_expected <- 
+  purrr::map2(
+    p_list_all,
+    p_value_all,
+    ~ compute_fdr(
+      p_list_1 = .x$p_list_1,
+      p_list_0 = .x$p_list_0,
+      p_value = .y
+    )
+  ) %>% 
+  purrr::reduce(c) %>% 
+  mean()
+
+fdr_expected
+```
 
 
 
