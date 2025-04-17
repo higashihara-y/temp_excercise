@@ -1,0 +1,330 @@
+---
+title: "第4章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+    page-layout: article
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+date: "最終更新: `r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "cetner", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(modelsummary)
+library(kableExtra)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
+
+# [4-1]片側遵守者
+
+```{r}
+set.seed(1)
+N <- 1000
+N_1 <- 500
+G <- c(
+  "nc",
+  "co"
+)
+bias <- 0.5
+
+tau_population <- 
+  c(1, 2)
+```
+
+```{r}
+outcome_potential <- 
+  1:length(G) %>% 
+  purrr::map(
+    function(n) {
+      df <- 
+        tibble::tibble(
+          g = G[n],
+          y_0 = 
+            rnorm(
+              N / length(G),
+              mean = 0,
+              sd = 1
+            ),
+          y_1 = 
+            rnorm(
+              N / length(G),
+              mean = tau_population[n],
+              sd = 1
+            ),
+          y_z = 
+            rnorm(
+              N / length(G),
+              mean = bias,
+              sd = 1
+            )
+        )
+      return(df)
+    } 
+  ) %>% 
+  dplyr::bind_rows()
+
+tau <- 
+  outcome_potential %>% 
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    tau = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::ungroup()
+
+outcome_potential %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+tau
+```
+
+```{r}
+data_realized_excluded <- 
+  generate_data_noncompliance_oneside(
+    outcome_potential = outcome_potential,
+    N_1 = N_1,
+    seed = 1,
+    exclusion = 1
+  )
+
+data_realized_excluded %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized_excluded %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+data_realized_included <- 
+  generate_data_noncompliance_oneside(
+    outcome_potential = outcome_potential,
+    N_1 = N_1,
+    seed = 1,
+    exclusion = 0
+  )
+
+data_realized_included %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized_included %>% 
+  modelsummary::datasummary_skim()
+```
+
+処置受取効果$\tilde{\tau}_D$の手計算
+```{r}
+tau_tilde_d_excluded <-
+  data_realized_excluded %>% 
+  dplyr::filter(
+    z == 1
+  ) %>% 
+  dplyr::summarise(
+    tau =
+      sum(d) / 
+      length(d)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_d_excluded
+```
+
+```{r}
+tau_tilde_d_included <- 
+  data_realized_included %>% 
+  dplyr::filter(
+    z == 1
+  ) %>% 
+  dplyr::summarise(
+    tau =
+      sum(d) / 
+      length(d)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_d_included
+```
+
+回帰分析による$\tilde{\tau}_D$の推定
+```{r}
+data_realized_excluded %>% 
+  lm(
+    formula = d ~ z,
+    data = .
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_included %>% 
+  lm(
+    formula = d ~ z,
+    data = .
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+処置割当効果$\tilde{\tau}_Y$の手計算
+```{r}
+tau_tilde_y_excluded <- 
+  data_realized_excluded %>% 
+  dplyr::group_by(z) %>% 
+  dplyr::summarise(
+    y = mean(y)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::summarize(
+    tau = 
+      sum(y * z) - 
+      sum(y * (1 - z))
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_y_excluded
+```
+
+```{r}
+tau_tilde_y_included <- 
+  data_realized_included %>% 
+  dplyr::group_by(z) %>% 
+  dplyr::summarise(
+    y = mean(y)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::summarise(
+    tau =
+      sum(y * z) -
+      sum(y * (1 - z))
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_y_included
+```
+
+回帰分析による$\tilde{\tau}_Y$の推定
+
+```{r}
+data_realized_excluded %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_included %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+局所平均処置効果$\tilde{\tau}_{Y,co} = \tau_{late}$の手計算
+
+```{r}
+tau_late_excluded <- 
+  tau_tilde_y_excluded /
+  tau_tilde_d_excluded
+
+tau_late_excluded
+```
+
+```{r}
+tau_late_included <- 
+  tau_tilde_y_included /
+  tau_tilde_d_included
+
+tau_late_included
+```
+
+二段階最小二乗法による$\tilde{\tau}_{Y,co} = \tau_{late}$の推定
+```{r}
+data_realized_excluded %>% 
+  estimatr::iv_robust(
+    data = .,
+    formula = y ~ d | z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_included %>% 
+  estimatr::iv_robust(
+    data = .,
+    formula = y ~ d | z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
