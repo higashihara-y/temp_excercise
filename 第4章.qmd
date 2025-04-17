@@ -292,9 +292,263 @@ data_realized_included %>%
   )
 ```
 
+# [4-2]両側非遵守者
 
+```{r}
+set.seed(1)
+N <- 1000
+N_1 <- 500
+G <- c(
+  "nt",
+  "co",
+  "at",
+  "df"
+)
 
+tau_population <- c(
+  1,
+  2,
+  3,
+  4
+)
+```
 
+```{r}
+outcome_potential <- 
+  1:length(G) %>% 
+  purrr::map(
+    function(n) {
+      df <- 
+        tibble::tibble(
+          g = G[n],
+          y_0 = 
+            rnorm(
+              N / length(G),
+              mean = 0,
+              sd = 1
+          ),
+          y_1 = 
+            rnorm(
+              N / length(G),
+              mean = tau_population[n],
+              sd = 1
+            )
+        ) %>% 
+        return(df)
+    }
+  ) %>% 
+  dplyr::bind_rows()
+
+tau <- 
+  outcome_potential %>% 
+  dplyr::group_by(g) %>% 
+  dplyr::summarise(
+    y = mean(y_1 - y_0)
+  ) %>% 
+  dplyr::ungroup()
+  
+outcome_potential %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential %>% 
+  modelsummary::datasummary_skim()
+```
+
+```{r}
+tau %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+outcome_potential_nodefier <- 
+  outcome_potential %>% 
+  dplyr::filter(
+    g != "df"
+  )
+```
+
+```{r}
+data_realized <- 
+  generate_data_noncompliance_twoside(
+    outcome_potential = outcome_potential,
+    N_1 = N_1,
+    seed = 1
+  )
+
+data_realized %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized %>% 
+  datasummary_skim()
+```
+
+```{r}
+data_realized_nodefier <- 
+  generate_data_noncompliance_twoside(
+    outcome_potential = outcome_potential_nodefier,
+    N_1 = N_1,
+    seed = 1
+  )
+
+data_realized_nodefier %>% 
+  head() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+data_realized_nodefier %>% 
+  datasummary_skim()
+```
+
+処置受取の処置割当効果$\tilde{\tau}_D$の手計算
+```{r}
+tau_tilde_d <- 
+  data_realized %>% 
+  dplyr::summarise(
+    tau = 
+      sum(z * d) / sum(z) - 
+      sum((1 - z) * d) / sum(1 - z)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_d
+```
+
+```{r}
+tau_tilde_d_nodefier <- 
+  data_realized_nodefier %>% 
+  dplyr::summarise(
+    tau =
+      sum(d * z) / sum(z) -
+      sum(d * (1 - z)) / sum(1 - z)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_d_nodefier
+```
+
+回帰分析による$\tilde{\tau}_D$の推定
+```{r}
+data_realized %>% 
+  lm(
+    data = .,
+    formula = d ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_nodefier %>% 
+  lm(
+    data = .,
+    formula = d ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+処置割当効果$\tilde{\tau}_Y$の手計算
+```{r}
+tau_tilde_y <- 
+  data_realized %>% 
+  dplyr::summarise(
+    tau =
+      sum(y * z) / sum(z) -
+      sum(y * (1 - z)) / sum(1 - z)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_y
+```
+
+```{r}
+tau_tilde_y_nodefier <- 
+  data_realized_nodefier %>% 
+  dplyr::summarise(
+    tau =
+      sum(y * z) / sum(z) -
+      sum(y * (1 - z)) / sum(1 - z)
+  ) %>% 
+  dplyr::pull(tau)
+
+tau_tilde_y_nodefier
+```
+
+回帰分析による$\tilde{\tau}_Y$の推定
+```{r}
+data_realized %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_nodefier %>% 
+  lm(
+    data = .,
+    formula = y ~ z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+局所平均処置効果$\tilde{\tau}_{Y,co} = \tau_{late}$の手計算
+```{r}
+tau_late <- 
+  tau_tilde_y /
+  tau_tilde_d
+
+tau_late
+```
+
+```{r}
+tau_late_nodefier <- 
+  tau_tilde_y_nodefier /
+  tau_tilde_d_nodefier
+
+tau_late_nodefier
+```
+
+2段階最小二乗法による$\tilde{\tau}_{Y,co} = \tau_{late}$の推定
+```{r}
+data_realized %>% 
+  estimatr::iv_robust(
+    data = .,
+    formula = y ~ d | z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
+
+```{r}
+data_realized_nodefier %>% 
+  estimatr::iv_robust(
+    data = .,
+    formula = y ~ d | z
+  ) %>% 
+  modelsummary(
+    fmt = 6
+  )
+```
 
 
 
