@@ -1,5 +1,5 @@
 ---
-title: "第6章"
+title: "第6&7章"
 format: 
   html:
     theme: journal
@@ -384,11 +384,71 @@ table %>%
   kable_styling()
 ```
 
+#　ファジーRD推定
+```{r}
+set.seed(1)
+N <- 1000
+```
 
+```{=latex}
+\begin{align*}
+ d =& 1\{\Psi^{-1}(0.3(1 + 0.5s) + 0.4z) \leq \epsilon_i\},\epsilon_i \sim N(0,1)\\
+ z =& 1\{s \geq 0\},\Psi(x) = P(\epsilon_i \leq x)\\
+ y =& y^*(1)d + y^*(0)(1 - d)
+\end{align*}
+```
 
+```{r}
+dgp_lee <- 
+  generate_dgp_lee_fuzzy(
+    N = N
+  )
+```
 
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE
+  )
 
+summary(result)
+```
 
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$d,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    fuzzy = dgp_lee$d,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$d,
+    all = TRUE
+  )
+
+summary(result)
+```
 
 
 
