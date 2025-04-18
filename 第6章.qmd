@@ -4,14 +4,14 @@ format:
   html:
     theme: journal
     highlight-style: pygments
-    page-layout: full
+    page-layout: article
 number-sections: true
 toc: true
 toc-depth: 3
 toc-location: left
 code-fold: show
 editor: source
-date: "最終更新 'r Sys.Date()`"
+date: "最終更新 `r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
@@ -201,6 +201,211 @@ rdrobust::rdplot(
   binselect = "qs"
 )
 ```
+
+# [6-2]シャープRD推定の妥当性チェック手順
+```{r}
+set.seed(1)
+N <- 500
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x =
+      c(
+        -1, 
+        1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = 
+      function(x) {
+        dbeta(
+          x = (x + 1) / 2,
+          shape1 = 2,
+          shape2 = 4
+        )
+      }
+  ) +
+  labs(
+     y = "Density"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x = 
+      c(
+        -1,
+        1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = specify_mu_lee,
+    geom = "point"
+  ) +
+  labs(
+    y = "Regression function",
+    x = "Score"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+dgp_lee <- 
+  generate_dgp_lee(
+    N = N
+  )
+```
+
+```{r}
+mean_y <- 
+  dgp_lee %>% 
+    dplyr::group_by(d) %>% 
+    dplyr::summarise(
+      y = mean(y)
+    ) %>% 
+    dplyr::pull(y)
+
+mean_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+lim_mean_y <- 
+  data.frame(
+    d = c(
+      FALSE,
+      TRUE
+    ),
+    mean_y = c(
+      specify_mu_lee(
+        s = -1.e-30
+      ),
+      specify_mu_lee(
+        s = 0
+      )
+    )
+  )
+
+lim_mena_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result_density <- 
+  rddensity::rddensity(
+    X = dgp_lee$s
+  )
+
+summary(result_density)
+```
+
+```{r}
+rddensity::rdplotdensity(
+  rdd = result_density,
+  X = dgp_lee$s
+)
+```
+
+```{r}
+result_opt <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s
+  )
+table <- 
+  data.frame(
+    case = "optimal",
+    absolute_bias = sum(abs(result_opt$bias)),
+    se_raw = result_opt$se[1],
+    bandwidth_h = result_opt$bws[1, 1],
+    bandwidth_b = result_opt$bws[2, 1]
+  )
+
+result_small <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    h = result_opt$bws[1, 1] / 10,
+    b = result_opt$bws[2, 1]
+  )
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "small",
+      absolute_bias = sum(abs(result_small$bias)),
+      se_raw = result_small$se[1],
+      bandwidth_h = result_small$bws[1, 1],
+      bandwidth_b = result_small$bws[2, 1]
+    )
+  )
+
+result_large <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    h = result_opt$bws[1, 1] * 4,
+    b = result_opt$bws[2, 1]
+  )
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "large",
+      absolute_bias = sum(abs(result_large$bias)),
+      se_raw = result_large$se[1],
+      bandwidth_h = result_large$bws[1, 1],
+      bandwidth_b = result_large$bws[2, 1]
+    )
+  )
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
