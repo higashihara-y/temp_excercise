@@ -1,0 +1,274 @@
+---
+title: "第6章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+    page-layout: full
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+editor: source
+date: "最終更新 'r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "center", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(modelsummary)
+library(kableExtra)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
+
+# [6-1]シャープRD推定
+
+```{r}
+set.seed(1)
+N <- 500
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x = c(
+      -1,
+      1
+    )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = 
+      function(x) {
+        dbeta(
+          x = (x + 1) / 2,
+          shape1 = 2,
+          shape2 = 4
+        )
+      }
+  ) +
+  labs(
+    y = "Density"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x =
+      c(
+        1,
+        -1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = specify_mu_lee,
+    geom = "point"
+  ) +
+  labs(
+    y = "Regression function",
+    x = "Score"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+dgp_lee <- 
+  generate_dgp_lee(
+    N = N
+  )
+```
+
+```{r}
+mean_y <- 
+  dgp_lee %>% 
+  dplyr::group_by(d) %>% 
+  dplyr::summarise(
+    y = mean(y)
+  ) %>% 
+  dplyr::pull(y)
+
+mean_y %>% 
+  kbl %>% 
+  kable_styling()
+```
+
+```{r}
+lim_mena_y <- 
+  data.frame(
+    d = c(
+      FALSE,
+      TRUE
+    ),
+    mean_y = c(
+      specify_mu_lee(
+        s = -1.e-30
+      ),
+      specify_mu_lee(
+        s = 0
+      )
+    )
+  )
+
+lim_mena_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE,
+    rho = 1
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE,
+    p = 2,
+    h = result$bws[1, 1],
+    b = result$bws[1, 1]
+  )
+
+summary(result)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s
+)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s,
+  binselect = "es"
+)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s,
+  binselect = "qs"
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
