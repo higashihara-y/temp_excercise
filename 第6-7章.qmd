@@ -1,0 +1,1051 @@
+---
+title: "第6-7章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+    page-layout: article
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+editor: source
+date: "最終更新 `r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "center", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(modelsummary)
+library(kableExtra)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
+
+# [6-1]シャープRD推定
+
+```{r}
+set.seed(1)
+N <- 500
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x = c(
+      -1,
+      1
+    )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = 
+      function(x) {
+        dbeta(
+          x = (x + 1) / 2,
+          shape1 = 2,
+          shape2 = 4
+        )
+      }
+  ) +
+  labs(
+    y = "Density"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x =
+      c(
+        1,
+        -1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = specify_mu_lee,
+    geom = "point"
+  ) +
+  labs(
+    y = "Regression function",
+    x = "Score"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+dgp_lee <- 
+  generate_dgp_lee(
+    N = N
+  )
+```
+
+```{r}
+mean_y <- 
+  dgp_lee %>% 
+  dplyr::group_by(d) %>% 
+  dplyr::summarise(
+    y = mean(y)
+  ) %>% 
+  dplyr::pull(y)
+
+mean_y %>% 
+  kbl %>% 
+  kable_styling()
+```
+
+```{r}
+lim_mena_y <- 
+  data.frame(
+    d = c(
+      FALSE,
+      TRUE
+    ),
+    mean_y = c(
+      specify_mu_lee(
+        s = -1.e-30
+      ),
+      specify_mu_lee(
+        s = 0
+      )
+    )
+  )
+
+lim_mena_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE,
+    rho = 1
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE,
+    p = 2,
+    h = result$bws[1, 1],
+    b = result$bws[1, 1]
+  )
+
+summary(result)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s
+)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s,
+  binselect = "es"
+)
+```
+
+```{r}
+rdrobust::rdplot(
+  y = dgp_lee$y,
+  x = dgp_lee$s,
+  binselect = "qs"
+)
+```
+
+# [6-2]シャープRD推定の妥当性チェック手順
+```{r}
+set.seed(1)
+N <- 500
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x =
+      c(
+        -1, 
+        1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = 
+      function(x) {
+        dbeta(
+          x = (x + 1) / 2,
+          shape1 = 2,
+          shape2 = 4
+        )
+      }
+  ) +
+  labs(
+     y = "Density"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+plot <- 
+  data.frame(
+    x = 
+      c(
+        -1,
+        1
+      )
+  ) %>% 
+  ggplot(
+    aes(
+      x = x
+    )
+  ) +
+  stat_function(
+    fun = specify_mu_lee,
+    geom = "point"
+  ) +
+  labs(
+    y = "Regression function",
+    x = "Score"
+  ) +
+  theme_classic()
+
+plot
+```
+
+```{r}
+dgp_lee <- 
+  generate_dgp_lee(
+    N = N
+  )
+```
+
+```{r}
+mean_y <- 
+  dgp_lee %>% 
+    dplyr::group_by(d) %>% 
+    dplyr::summarise(
+      y = mean(y)
+    ) %>% 
+    dplyr::pull(y)
+
+mean_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+lim_mean_y <- 
+  data.frame(
+    d = c(
+      FALSE,
+      TRUE
+    ),
+    mean_y = c(
+      specify_mu_lee(
+        s = -1.e-30
+      ),
+      specify_mu_lee(
+        s = 0
+      )
+    )
+  )
+
+lim_mena_y %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result_density <- 
+  rddensity::rddensity(
+    X = dgp_lee$s
+  )
+
+summary(result_density)
+```
+
+```{r}
+rddensity::rdplotdensity(
+  rdd = result_density,
+  X = dgp_lee$s
+)
+```
+
+```{r}
+result_opt <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s
+  )
+table <- 
+  data.frame(
+    case = "optimal",
+    absolute_bias = sum(abs(result_opt$bias)),
+    se_raw = result_opt$se[1],
+    bandwidth_h = result_opt$bws[1, 1],
+    bandwidth_b = result_opt$bws[2, 1]
+  )
+
+result_small <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    h = result_opt$bws[1, 1] / 10,
+    b = result_opt$bws[2, 1]
+  )
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "small",
+      absolute_bias = sum(abs(result_small$bias)),
+      se_raw = result_small$se[1],
+      bandwidth_h = result_small$bws[1, 1],
+      bandwidth_b = result_small$bws[2, 1]
+    )
+  )
+
+result_large <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    h = result_opt$bws[1, 1] * 4,
+    b = result_opt$bws[2, 1]
+  )
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "large",
+      absolute_bias = sum(abs(result_large$bias)),
+      se_raw = result_large$se[1],
+      bandwidth_h = result_large$bws[1, 1],
+      bandwidth_b = result_large$bws[2, 1]
+    )
+  )
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+# [7-1]ファジーRD推定
+```{r}
+set.seed(1)
+N <- 1000
+```
+
+```{=latex}
+\begin{align*}
+ d =& 1\{\Psi^{-1}(0.3(1 + 0.5s) + 0.4z) \leq \epsilon_i\},\epsilon_i \sim N(0,1)\\
+ z =& 1\{s \geq 0\},\Psi(x) = P(\epsilon_i \leq x)\\
+ y =& y^*(1)d + y^*(0)(1 - d)
+\end{align*}
+```
+
+```{r}
+dgp_lee <- 
+  generate_dgp_lee_fuzzy(
+    N = N
+  )
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$d,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    fuzzy = dgp_lee$d,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+```{r}
+result <- 
+  rdrobust::rdrobust(
+    y = dgp_lee$y,
+    x = dgp_lee$s,
+    all = TRUE
+  )
+
+summary(result)
+```
+
+# [7-2]離散スコアRD推定
+```{r}
+set.seed(1)
+N <- 1000
+dgp_cont <- 
+  generate_dgp_LM_discrete(
+    N = N,
+    rounding = function(s) {s}
+  )
+
+dgp_all <- 
+  list(
+    dgp_cont = dgp_cont
+  )
+```
+
+```{r}
+list_specification <- 
+  list(
+    "Continuous score variable",
+    "Discrete score variable at 0.01 grids",
+    "Discrete score variable at 0.02 grids",
+    "Discrete score variable at 0.05 grids",
+    "Discrete score variable at 0.1 grids"
+  )
+
+list_rounding_fine <- 
+  list(
+    dgp_001 <- function(s) {
+      round(
+        s,
+        2
+      )
+    },
+    dgp_002 <- function(s) {
+      round(
+        s / 2,
+        2
+      ) * 2
+    }
+  )
+
+list_rounding_rough <- 
+  list(
+    dgp_005 = function(s) {
+      round(
+        s * 2,
+        1
+      ) / 2
+    },
+    dgp_01 = function(s) {
+      round(
+        s,
+        1
+      )
+    }
+  )
+```
+
+```{r}
+dgp_discrete_fine <- 
+  purrr::map(
+    .x = list_rounding_fine,
+    .f = function(rounding) {
+      call_generate_dgp_LM_discrete(rounding)
+    }
+  )
+
+dgp_discrete_rough <- 
+  purrr::map(
+    .x = list_rounding_rough,
+    .f = function(rounding) {
+      call_generate_dgp_LM_discrete(rounding)
+    }
+  )
+
+dgp_fine <- 
+  append(
+    dgp_all,
+    dgp_discrete_fine
+  )
+
+dgp_all <- 
+  append(
+    dgp_fine,
+    dgp_discrete_rough
+  )
+```
+
+```{r}
+list_plots <- 
+  purrr::map(
+    .x = dgp_all,
+    .f = call_plot_data
+  )
+
+counter <- 0
+for(
+  plot in list_plots
+) {
+  counter <- counter + 1
+  plot_to_display <- 
+    plot +
+    ggtitle(
+      list_specification[counter]
+    )
+  print(plot_to_display)
+}
+```
+
+```{r}
+table <- data.frame()
+wgt__ <- NULL
+```
+
+```{r}
+list_result_ols <- 
+  purrr::map(
+    .x = dgp_all,
+    .f = function(data) {
+      data$s_2 = data$s^2
+      data$s_3 = data$s^3
+      data$s_4 = data$s^4
+      
+      result <- 
+        lm(data = data,
+           formula = y ~ 1 + d + s + s_2 + s_3 + s_4)
+      
+      return(result)
+    }
+  )
+
+list_specification <- 
+  list(
+    "連続スコア",
+    "離散(0.01刻み)",
+    "離散(0.02刻み)",
+    "離散(0.05刻み)",
+    "離散(0.1刻み)"
+  )
+
+counter <- 0
+
+for(
+  result in list_result_ols
+) {
+  counter <- counter + 1
+  table_lm <- coef(summary(result))
+  table <- 
+    rbind(
+      table,
+      data.frame(
+        case =
+          paste0("四次元OLS 不均一分散頑健分散: ",
+                 list_specification[counter]),
+        ci_lower =
+          table_lm[2] -
+          table_lm[2, 2] * qt(0.975, df = summary(result)$df[2]),
+        ci_upper =
+          table_lm[2] +
+          table_lm[2, 2] * qt(0.975, df = summary(result)$df[2]),
+        point_est = table_lm[2],
+        se = table_lm[2, 2],
+        h = NA
+      )
+    )
+}
+```
+
+```{r}
+list_result_ols_cluster <- 
+  purrr::map(
+    .x = dgp_all,
+    .f = function(data) {
+      data$s_2 = data$s^2
+      data$s_3 = data$s^3
+      data$s_4 = data$s^4
+      
+      result <- miceadds::lm.cluster(
+        data = data,
+        formula = y ~ 1 + d + s + s_2 + s_3 + s_4,
+        cluster = "s",
+        weights = NULL
+      )
+      return(result)
+    }
+  )
+
+counter <- 0
+
+for(
+  result_cluster in list_result_ols_cluster
+) {
+  counter <- counter + 1
+  invisible(
+    capture.output(
+      table_cl <- 
+        summary(result_cluster)
+    )
+  )
+  table <- 
+    rbind(
+      table,
+      data.frame(
+        case = paste0("四次元OLS クラスター頑健分散: ",
+                      list_specification[counter]),
+        ci_lower = table_cl[2] -
+          table_cl[2, 2] * qt(
+            0.975,
+            result_cluster$lm_res$df.residual
+          ),
+        ci_upper = table_cl[2] +
+          table_cl[2, 2] * qt(
+            0.975,
+            result_cluster$lm_res$df.residual),
+        point_est  = NA,
+        se = table_cl[2,2],
+        h = NA
+        )
+      )
+}
+```
+
+```{r}
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+
+```{r}
+set.seed(1)
+dgp_01_alt <- 
+  generate_dgp_LM_discrete_alternate(
+    N = N,
+    rounding = function(s) {round(s, 1)}
+  )
+
+table_alt <- data.frame()
+result <- 
+  return_OLS(
+    data = dgp_01_alt
+  )
+
+table_alt <- 
+  append_OLS_table(
+    table = table_alt,
+    case = "四次OLS 不均一分散頑健分散: 離散(0.1刻み)",
+    result = result
+  )
+
+result_cluster <- 
+  return_OLS_cluster(
+    data = dgp_01_alt
+  )
+
+table_alt <- 
+  append_OLS_cluster_table(
+    table = table_alt,
+    case = "四次OLS クラスター頑健分散: 離散(0.1刻み)",
+    result = result_cluster
+  )
+
+table_alt
+```
+
+```{r}
+table <- data.frame()
+table_compare <- data.frame()
+
+list_result_rdrobust <- 
+  purrr::map(
+    .x = dgp_fine,
+    .f = function(data) {
+      result <- 
+        rdrobust::rdrobust(
+          y = data$y,
+          x = data$s
+        )
+      return(result)
+    }
+  )
+
+counter <- 0
+
+for(result in list_result_rdrobust) {
+  counter <- counter + 1
+  table <- 
+    rbind(
+      table,
+      data.frame(
+        case = paste0("rdrobust: ", list_specification[counter]),
+        ci_lower = result$ci[3, 1],
+        ci_upper = result$ci[3, 2],
+        point_est = result$Estimate[1],
+        se = result$se[3],
+        h = result$bwselect[1],
+        M = NA
+      )
+    )
+  
+  table_compare <- 
+    rbind(
+      table_compare,
+      data.frame(
+        case = paste0("rdrobust: ", list_specification[counter]),
+        ci_lower = result$ci[3, 1],
+        ci_upper = result$ci[3, 2],
+        point_est = result$Estimate[1],
+        se = result$se[3],
+        h = result$bwselect[1],
+        M = NA
+      )
+    )
+}
+
+list_result_rdrobust_masspoints_off <- 
+  purrr::map(
+    .x = dgp_discrete_fine,
+    .f = function(data) {
+      result <- 
+        rdrobust::rdrobust(
+          y = data$y,
+          x = data$s,
+          masspoints = "off"
+        )
+      return(result)
+    }
+  )
+
+counter <- 0
+
+for(result in list_result_rdrobust_masspoints_off) {
+  counter <- counter + 1
+  table <- 
+    rbind(
+      table,
+      data.frame(
+        case = paste0("rdrobust: ",
+                      list_specification[counter + 1],
+                      "(離散値補正なし)"),
+        ci_lower = result$ci[3, 1],
+        ci_upper = result$ci[3, 2],
+        point_est = result$Estimate[1],
+        se = result$se[3],
+        h = result$bws[1],
+        M = NA
+      )
+    )
+}
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+try(
+  result <- 
+    rdrobust::rdrobust(
+      y = dgp_all$dgp_005$y,
+      x = dgp_all$dgp_005$s
+    ),
+  silent = FALSE
+)
+```
+
+```{r}
+list_M_value <- 
+  c(100, 60, 30, 15, 5)
+
+list_result_rdhonest <- 
+  purrr::map(
+    .x = list_M_value,
+    .f = function(M) {
+      result <- 
+        RDHonest::RDHonest(
+          formula = y ~s,
+          data = dgp_all$dgp_005,
+          kern = "uniform",
+          opt.criterion = "FLCI",
+          M = M,
+          sclass = "H"
+        )
+      return(result)
+    }
+  )
+
+table <- data.frame()
+counter <- 0
+
+for(result in list_result_rdhonest) {
+  counter <- counter + 1
+  table <- 
+    rbind(
+      table,
+      data.frame(
+        case = paste0("RDHonest:(0.05刻み) 一様カーネル CI最小化 M=",
+                      list_M_value[counter]),
+        ci_lower = result$coefficients$conf.low,
+        ci_upper = result$coefficients$conf.high,
+        point_est = result$coefficients$estimate,
+        se = result$coefficients$std.error,
+        h = result$coefficients$bandwidth,
+        M = result$coefficients$M 
+      )
+    )
+}
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result <- 
+  RDHonest::RDHonest(
+    formula = y ~ s,
+    data = dgp_all$dgp_005,
+    kern = "uniform",
+    opt.criterion = "FLCI",
+    sclass = "H"
+  )
+
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "RDHonest: (0.05刻み)一様カーネル CI最小化 M=rule-of-thumb",
+        ci_lower = result$coefficients$conf.low,
+        ci_upper = result$coefficients$conf.high,
+        point_est = result$coefficients$estimate,
+        se = result$coefficients$std.error,
+        h = result$coefficients$bandwidth,
+        M = result$coefficients$M
+    )
+  )
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result <- 
+  RDHonest::RDHonest(
+    formula = y ~ s,
+    data = dgp_all$dgp_005,
+    kern = "triangular",
+    opt.criterion = "FLCI",
+    sclass = "H"
+  )
+
+table <- 
+  rbind(
+    table,
+    data.frame(
+      case = "RDHonest: (0.05刻み)三角カーネル CI最小化 M=rule-of-thumb",
+        ci_lower = result$coefficients$conf.low,
+        ci_upper = result$coefficients$conf.high,
+        point_est = result$coefficients$estimate,
+        se = result$coefficients$std.error,
+        h = result$coefficients$bandwidth,
+        M = result$coefficients$M
+    )
+  )
+
+table %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+list_result_rdhonest_data <- 
+  purrr::map(
+    .x = dgp_all,
+    .f = function(data) {
+      result <- 
+        RDHonest::RDHonest(
+          formula = y ~ s,
+          data = data,
+          kern = "uniform",
+          opt.criterion = "FLCI",
+          sclass = "H"
+        )
+      return(result)
+    }
+  )
+
+counter <- 0
+
+for(result in list_result_rdhonest_data) {
+  counter <- counter + 1
+  table_compare <- 
+    rbind(
+      table_compare,
+      data.frame(
+        case = paste0("RDHonest: ",
+                      list_specification[counter],
+                      " (一様カーネル CI最小化 M=rule-of-thumb)"),
+        ci_lower = result$coefficients$conf.low,
+        ci_upper = result$coefficients$conf.high,
+        point_est = result$coefficients$estimate,
+        se = result$coefficients$std.error,
+        h = result$coefficients$bandwidth,
+        M = result$coefficients$M
+      )
+    )
+}
+
+table_compare %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
