@@ -1,0 +1,685 @@
+---
+title: "第9章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+    page-layout: article
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+date: "最終更新: `r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "left", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(modelsummary)
+library(kableExtra)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
+
+# [9-1, 10-1]2方向固定効果（TWFE）推定
+```{r}
+N <- 1000
+T0 <- 4
+T1 <- 6
+T <- T0 + T1
+```
+
+```{r}
+mean_tau_i_simul <- 0.05
+sd_tau_i_simul <- 0.2
+
+mean_tau_i_multi <- 0.1
+sd_tau_i_multi <- 0.2
+
+scale_5 <- 1
+scale_6 <- -2.5
+scale_7 <- -1.75
+scale_8 <- -1
+```
+
+```{r}
+set.seed(1)
+df_design <- 
+  generate_df_no_covariates(
+    N = N,
+    T = T,
+    T0 = T0,
+    mean_tau_i = mean_tau_i_simul,
+    sd_tau_i = sd_tau_i_simul
+  )
+```
+
+```{r}
+df_design %>%
+  dplyr::filter(
+    z_it == 1
+  ) %>% 
+  dplyr::summarise(
+    y = mean(tau_t)
+  ) %>% 
+  .[] * mean_tau_i_simul
+```
+
+```{r}
+att_pop <- 
+  df_design %>% 
+    dplyr::filter(
+      time > T0
+    ) %>% 
+    dplyr::pull(
+      tau_t
+    ) %>% 
+    unique()
+
+att_pop <- 
+  mean(att_pop) * mean_tau_i_simul
+```
+
+```{r}
+att_sample <- 
+  df_design %>% 
+  dplyr::filter(
+    z_it == 1
+  ) %>% 
+  dplyr::summarise(
+    tau_it = mean(tau_it)
+  ) %>% 
+  dplyr::pull(tau_it)
+
+att_sample
+```
+
+```{r}
+set.seed(1)
+
+df_design_multiperiod <- 
+  generate_df_multiperiod(
+    N = N,
+    T = T,
+    T1 = T1,
+    T0 = T0,
+    diff_trend = FALSE,
+    mean_tau_i = mean_tau_i_multi,
+    sd_tau_i = sd_tau_i_multi,
+    scale_5 = scale_5,
+    scale_6 = scale_6,
+    scale_7 = scale_7,
+    scale_8 = scale_8
+  )
+```
+
+```{r}
+df_design_multiperiod %>% 
+  dplyr::group_by(
+    group_i
+  ) %>% 
+  dplyr::summarise(
+    fraction = length(group_i)
+  ) %>% 
+  dplyr::mutate(
+    fraction = fraction / sum(fraction)
+  ) 
+```
+
+```{r}
+mean_abs_tau_i <- 
+  (
+    mean_tau_i_multi + 
+      sd_tau_i_multi * (
+        dnorm((-mean_tau_i_multi) / sd_tau_i_multi)) / 
+      (1 - pnorm((-mean_tau_i_multi) / sd_tau_i_multi))
+   ) * 
+    pnorm(mean_tau_i_multi / sd_tau_i_multi) -
+  (
+    mean_tau_i_multi -
+     sd_tau_i_multi * (
+        dnorm((-mean_tau_i_multi) / sd_tau_i_multi)) / 
+     (pnorm((-mean_tau_i_multi) / sd_tau_i_multi))
+   ) * 
+    (1 - pnorm(mean_tau_i_multi / sd_tau_i_multi))
+```
+
+```{r}
+att_pop_multiperiod_group <- 
+  df_design_multiperiod %>% 
+  dplyr::filter(
+    time > T0,
+    g5_i == 1
+  ) %>% 
+  dplyr::summarise(
+    group = "5",
+    att_pop_multiperiod = 
+      mean(unique(tau_t)) * scale_5 * mean_abs_tau_i,
+    fraction_within_group = 
+      sum(z_it) / sum(df_design_multiperiod$z_it)
+  )
+
+att_pop_multiperiod_group <- 
+  rbind(
+    att_pop_multiperiod_group,
+    df_design_multiperiod %>% 
+      dplyr::filter(
+        time > T0,
+        g6_i == 1
+      ) %>% 
+      dplyr::summarise(
+        group = "6",
+        att_pop_multiperiod =
+          mean(unique(tau_t)) * scale_6 * mean_abs_tau_i,
+        fraction_within_group =
+          sum(z_it) / sum(df_design_multiperiod$z_it)
+      )
+  )
+
+att_pop_multiperiod_group <- 
+  rbind(
+    att_pop_multiperiod_group,
+    df_design_multiperiod %>% 
+      dplyr::filter(
+        time > T0,
+        g7_i == 1
+      ) %>% 
+      dplyr::summarise(
+        group = "7",
+        att_pop_multiperiod =
+          mean(unique(tau_t)) * scale_7 * mean_abs_tau_i,
+        fraction_within_group =
+          sum(z_it) / sum(df_design_multiperiod$z_it)
+      )
+  )
+
+att_pop_multiperiod_group <- 
+  rbind(
+    att_pop_multiperiod_group,
+    df_design_multiperiod %>% 
+      dplyr::filter(
+        time > T0,
+        g8_i == 1
+      ) %>% 
+      dplyr::summarise(
+        group = "8",
+        att_pop_multiperiod =
+          mean(unique(tau_t)) * scale_8 * mean_abs_tau_i,
+        fraction_within_group =
+          sum(z_it) / sum(df_design_multiperiod$z_it)
+      )
+  )
+
+att_pop_multiperiod_group %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+att_pop_multiperiod <- 
+  att_pop_multiperiod_group %>% 
+  dplyr::summarise(
+    att_pop_multiperiod =
+      att_pop_multiperiod %*%
+      fraction_within_group
+  ) %>% 
+  dplyr::pull(att_pop_multiperiod)
+
+att_pop_multiperiod
+```
+
+```{r}
+att_pop_multiperiod <- 
+  att_pop_multiperiod_group$att_pop_multiperiod %*%
+  att_pop_multiperiod_group$fraction_within_group
+
+att_pop_multiperiod
+```
+
+```{r}
+att_sample_multipleriod_group <- 
+  df_design_multiperiod %>% 
+    dplyr::filter(
+      group_i > T0
+    ) %>% 
+    dplyr::group_by(
+      group_i
+    ) %>% 
+    dplyr::summarise(
+      tau_it = mean(tau_it)
+    )
+
+att_sample_multipleriod_group  
+```
+
+```{r}
+att_sample_multipleriod <- 
+  df_design_multiperiod %>% 
+  dplyr::filter(
+    z_it == 1
+  ) %>% 
+  dplyr::summarise(
+    tau_it = mean(tau_it)
+  ) %>% 
+  dplyr::pull(tau_it)
+
+att_sample_multipleriod
+```
+
+```{r}
+df_design_observed <- 
+  df_design %>% 
+    dplyr::select(
+      id,
+      time,
+      g_i,
+      z_it,
+      y_it
+    )
+
+head(df_design_observed) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_design_observed %>% 
+  dplyr::pull(g_i) %>% 
+  mean()
+```
+
+```{r}
+post <- 
+  df_design_observed %>% 
+    dplyr::filter(
+      time > T0
+    ) %>% 
+    dplyr::summarise(
+      y_it = 
+        sum(y_it * g_i) / sum(g_i) - 
+        sum(y_it * (1 - g_i)) / sum(1 - g_i)
+    ) %>% 
+    dplyr::pull(y_it)
+
+post
+```
+
+```{r}
+pre <- 
+  df_design_observed %>% 
+  dplyr::filter(
+    time <= T0
+  ) %>% 
+  dplyr::summarise(
+    y_it = 
+      sum(y_it * g_i) / sum(g_i) -
+      sum(y_it * (1 - g_i)) / sum(1 - g_i)
+  ) %>% 
+  dplyr::pull(y_it)
+
+pre
+```
+
+```{r}
+did <- post - pre
+did
+```
+
+```{r}
+lsdv <- 
+  plm::plm(
+    formula = y_it ~ z_it,
+    data = df_design_observed,
+    index = c(
+      "id",
+      "time"
+    ),
+    effect = "twoways"
+  )
+
+clubSandwich::coef_test(
+  obj = lsdv,
+  vcov = "CR1",
+  cluster = "id",
+  test = "naive-t"
+) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+estimatr::lm_robust(
+  formula = y_it ~ z_it,
+  data = df_design_observed,
+  clusters = id,
+  fixed_effects = id + time,
+  se_type = "stata"
+) %>% 
+  summary() %>% 
+  coefficients() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_design_multiperiod_obserbed <- 
+  df_design_multiperiod %>% 
+  dplyr::select(
+      "id",
+      "time",
+      "group_i",
+      "g5_i",
+      "g6_i",
+      "g7_i",
+      "g8_i",
+      "z5_it",
+      "z6_it",
+      "z7_it",
+      "z8_it",
+      "z_it",
+      "y_it"
+  )
+
+head(df_design_multiperiod_obserbed) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+trend_control <- 
+  tibble::tibble(
+    group_i = c(5, 6, 7, 8),
+    trend_control = 
+      df_design_multiperiod_obserbed %>% 
+      dplyr::filter(
+        group_i == 0
+      ) %>% 
+      dplyr::summarise(
+        group_5 =
+          sum(y_it * (time >= 5)) /  sum(time >= 5) -
+                sum(y_it * (time < 5)) / sum(time < 5),
+        group_6 =
+          sum(y_it * (time >= 6)) /  sum(time >= 6) -
+                sum(y_it * (time < 6)) / sum(time < 6),
+        group_7 =
+          sum(y_it * (time >= 7)) /  sum(time >= 7) -
+                sum(y_it * (time < 7)) / sum(time < 7),
+        group_8 =
+          sum(y_it * (time >= 8)) /  sum(time >= 8) -
+                sum(y_it * (time < 8)) / sum(time < 8),
+        ) %>% 
+      t()
+  )
+```
+
+```{r}
+trend_treated <- 
+      df_design_multiperiod_obserbed %>% 
+      dplyr::filter(
+        group_i > 0
+      ) %>% 
+      dplyr::group_by(
+        group_i
+      ) %>% 
+      dplyr::summarise(
+        trend_treated =
+          sum(y_it * (time >= group_i)) / sum(time >= group_i) -
+          sum(y_it * (time < group_i)) / sum(time < group_i),
+        proporion =
+          sum(z_it) / sum(df_design_multiperiod_obserbed$z_it)
+  )
+```
+
+```{r}
+df_did <- 
+  dplyr::left_join(
+    trend_control,
+    trend_treated,
+    by = "group_i"
+  )
+
+df_did <- 
+  df_did %>% 
+  dplyr::mutate(
+    did_dif = trend_control - trend_treated
+  ) %>% 
+  dplyr::select(
+    group_i,
+    did_dif,
+    proporion
+  )
+
+df_did <- 
+  df_did %>% 
+  dplyr::left_join(
+    att_sample_multipleriod_group,
+    by = "group_i"
+  )
+
+df_did %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+cbind(
+  df_did %>% 
+    dplyr::summarise(
+      did_dif_average = 
+        sum(did_dif * proporion)
+    ),
+  att_sample_multipleriod
+)
+```
+
+\begin{align*}
+ Y_{it} = \mu_i + \theta_t + \tau Z_{it} + \epsilon_{it}
+\end{align*}
+
+```{r}
+lsdv <- 
+  df_design_multiperiod_obserbed %>% 
+  plm::plm(
+    formula = y_it ~ z_it,
+    data = .,
+    index = c(
+      "id",
+      "time"
+    ),
+    effect = "twoways"
+  )
+
+clubSandwich::coef_test(
+  obj = lsdv,
+  vcov = "CR1",
+  cluster = "id",
+  test = "naive-t"
+) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+estimatr::lm_robust(
+  formula = y_it ~ z_it,
+  data = df_design_multiperiod_obserbed,
+  clusters = id,
+  fixed_effects = id + time,
+  se_type = "CR0"
+)
+```
+
+```{r}
+result <- 
+  bacondecomp::bacon(
+    formula = y_it ~ z_it,
+    data = df_design_multiperiod_obserbed,
+    id_var = "id",
+    time_var = "time"
+  )
+```
+
+```{r}
+result %>% 
+  ggplot(
+    aes(
+      x = result$weight,
+      y = result$estimate,
+      colour = factor(result$type)
+    )
+  ) +
+  geom_point() +
+  labs(
+    x = "Weight",
+    y = "Estimate",
+    color = "Type"
+  ) +
+  scale_color_viridis_d() +
+  theme_classic() +
+  theme(legend.position = "right")
+```
+
+\begin{align*}
+ Y_{it} =& \beta + \sum_{k=5}^{8} \mu_k G_{ki} + 
+\sum_{t'=2}^{T} \theta_{t'}1\{t = t'\} + \sum_{k=5}^{8} 
+\sum_{t'=2}^{T} \tau_{kt'} G_{ki} 1\{t = t'\} + \epsilon_{it}
+\end{align*}
+
+```{r}
+df_design_multiperiod_obserbed$z_it_t <- 
+  df_design_multiperiod_obserbed$z_it * 
+  df_design_multiperiod_obserbed$time +
+  df_design_multiperiod_obserbed$z_it *
+  df_design_multiperiod_obserbed$group_i * 100
+
+df_design_multiperiod_obserbed <- 
+  fastDummies::dummy_cols(
+    .data = df_design_multiperiod_obserbed,
+    select_columns = "z_it_t"
+  )
+
+df_design_multiperiod_obserbed <- 
+  df_design_multiperiod_obserbed %>% 
+  dplyr::select(
+    -z_it_t_0
+  )
+
+fml <- as.formula(
+  paste("y_it ~",
+        paste(
+          grep(
+            "z_it_t_",
+            names(df_design_multiperiod_obserbed),
+            value = TRUE
+          ),
+          collapse = " + "
+        ))
+)
+
+lsdv <- 
+  plm::plm(
+    formula = fml,
+    data = df_design_multiperiod_obserbed,
+    index = c(
+      "id",
+      "time"
+    ),
+    effect = "twoways"
+  )
+
+clubSandwich::coef_test(
+  obj = lsdv,
+  vcov = "CR1",
+  test = "naive-t",
+  cluster = "id"
+) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+
+```{r}
+estimatr::lm_robust(
+  formula = fml,
+  data = df_design_multiperiod_obserbed,
+  clusters = id,
+  fixed_effects = id + time,
+  se_type = "CR0"
+) %>% 
+  summary()
+```
+
+```{r}
+df_compare <- 
+  tibble::tibble(
+    group_i = c(5, 6, 7, 8),
+    did_lsdv = 
+      c(
+        mean(lsdv$coefficients[grep(
+          "z_it_t_5",
+          names(lsdv$coefficients),
+          value = TRUE
+        )]),
+        mean(lsdv$coefficients[grep(
+          "z_it_t_6",
+          names(lsdv$coefficients),
+          value = TRUE
+        )]),
+        mean(lsdv$coefficients[grep(
+          "z_it_t_7",
+          names(lsdv$coefficients),
+          value = TRUE
+        )]),
+        mean(lsdv$coefficients[grep(
+          "z_it_t_8",
+          names(lsdv$coefficients),
+          value = TRUE
+        )])),
+    did_dif = 
+      trend_treated$trend_treated - trend_control$trend_control
+  )
+
+df_compare %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_compare$proportion <- 
+  df_did$proporion
+
+df_compare %>% 
+  dplyr::summarise(
+    did_lsdv_ave = sum(did_lsdv * proportion),
+    did_dif_ave = sum(did_dif * proportion)
+  ) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
