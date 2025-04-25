@@ -660,12 +660,567 @@ df_compare %>%
   kable_styling()
 ```
 
+<br>
+
+# [9-2]合成コントロール法
+
+```{r}
+data(
+  "smoking",
+  package = "tidysynth"
+) 
+
+smoking %>% 
+  summary()
+
+smoking %>% 
+  head()
+```
+
+```{r}
+year_start <- 1988
+name_treated <- "California"
+year_init <- min(smoking$year)
+year_end <- max(smoking$year)
+total_years <- year_end - year_init
+```
+
+```{r}
+alpha0_retprice <- 35
+alpha0_cigsale <- 140
+
+delta_mean <- 0
+delta_sd <- 2
+
+mu_mean <- 0
+mu_sd <- 2
+```
+
+```{r}
+te_unif_lower <- 0.05
+te_unif_upper <- 0.1
+```
+
+```{r}
+eta_mean <- 0
+eta_sd <- 3
+
+rho <- 0.1
+rho_zy <- 0.01
+rho_zz <- 0.5
+rho_yy <- 0.5
+```
+
+```{r}
+window_income_age <- 1980:1988
+window_beer <- 1984:1988
+window_cigsale1 <- 1975
+window_cigsale2 <- 1980
+window_cigsale3 <- 1988
+
+window_fit <- 1970:1988
+```
+
+```{r}
+margin_ipop <- 0.02
+sigf_ipop <- 7
+bound_ipop <- 6
+```
+
+```{r}
+set.seed(1)
+```
+
+```{r}
+smoking_fake_factor_no_effect <- 
+  smoking %>% 
+    dplyr::group_by(
+      state
+    ) %>% 
+    dplyr::mutate(
+      mu_i_retprice =
+        rnorm(
+          n = 1,
+          mean = mu_mean,
+          sd = mu_sd
+        ),
+      mu_i_cigsale = 
+        rnorm(
+          n = 1,
+          mean = mu_mean,
+          sd = mu_sd
+        )
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(
+      year
+    ) %>% 
+    dplyr::mutate(
+      retprice = 
+        rnorm(
+          n = 1,
+          mean = delta_mean,
+          sd = delta_sd
+        ) +
+        runif(
+          n = 1
+        ) * mu_i_retprice +
+        rnorm(
+          n = length(state)
+        ),
+      cigsale =
+        alpha0_cigsale +
+        rnorm(
+          n = 1,
+          mean = delta_mean,
+          sd = delta_sd
+        ) + 
+        runif(
+          n = 1
+        ) * mu_i_cigsale +
+        rnorm(
+          n = length(state)
+        )
+    ) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(
+      -mu_i_retprice,
+      -mu_i_cigsale
+    ) 
+```
+
+```{r}
+smoking_fake_factor_some_effect <- 
+  smoking %>% 
+  dplyr::group_by(
+    state
+  ) %>% 
+  dplyr::mutate(
+    mu_i_retprice = 
+      rnorm(
+        n = 1,
+        mean = mu_mean,
+        sd = mu_sd
+      ),
+    mu_i_cigsale =
+      rnorm(
+        n = 1,
+        mean = mu_mean,
+        sd = mu_sd
+      )
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(
+    year
+  ) %>% 
+  dplyr::mutate(
+    retprice = 
+      rnorm(
+        n = 1,
+        mean = delta_mean,
+        sd = delta_sd
+      ) +
+      runif(
+        n = 1
+      ) * mu_i_retprice +
+      rnorm(
+        n = length (state)
+      ),
+    cigsale = 
+      alpha0_cigsale +
+      rnorm(
+        n = 1,
+        mean = delta_mean,
+        sd = delta_sd
+      ) +
+      runif(
+        n = 1
+      ) * mu_i_cigsale +
+      rnorm(
+        n = length(state)
+      )
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(
+    -mu_i_retprice,
+    -mu_i_cigsale
+  ) %>% 
+  dplyr::mutate(
+    cigsale =
+      ifelse(
+        state == name_treated & year > year_start,
+        cigsale * (
+          1 -
+            runif(
+              n = 1,
+              te_unif_lower,
+              te_unif_upper
+            )
+        ),
+        cigsale
+      )
+  )
+```
+
+\begin{align*}
+Z_{it} =& \alpha_0^z + \rho_{zy} * \left(\frac{t - year\_start}{total\_yaers}\right)^2 Y_{it-1} + \rho_{zz} * \left(\frac{t - year\_init}{total\_years}\right)Z_{it-1} + \eta_{it}\\
+Y_{it} =& \alpha_0^y + \rho Z_{it-1} + rho_{yy} * \left(\frac{t - year\_init}{tital\_years}\right)^2 Y_{it_i} + \eta_{it}
+\end{align*}
+
+```{r}
+smoking_fake <- smoking
+years <- unique(smoking_fake$year)
+
+smoking_fake$retprice[smoking_fake$year == 1] <- 
+  alpha0_retprice +
+  rnorm(
+    n = sum(smoking_fake$year == 1),
+    mean = eta_mean,
+    sd = eta_sd
+  )
+
+smoking_fake$cigsale[smoking_fake$year == 1] <- 
+  alpha0_cigsale +
+  rho *smoking_fake$retprice[smoking_fake$year == 1] +
+  rnorm(
+    n = sum(smoking_fake$year == 1),
+    mean = eta_mean,
+    sd = eta_sd
+  )
+
+for(
+  t in years[2:length(years)]
+) {
+  smoking_fake$retprice[smoking_fake$year == t] <- 
+    alpha0_retprice +
+    rho_zy * (
+      (t - (year_init + 10)) / total_years
+    )^2 * smoking_fake$cigsale[smoking_fake$year == t- 1] +
+    rho_zz * (
+      (t - year_init) / total_years
+    ) * smoking_fake$retprice[smoking_fake$year == t - 1] +
+    rnorm(
+      n = sum(smoking_fake$year == t),
+      mean = eta_mean,
+      sd = eta_sd
+    )
+  
+  smoking_fake$cigsale[smoking_fake$year == t] <- 
+    alpha0_cigsale +
+    rho * smoking_fake$retprice[smoking_fake$year == t - 1] +
+    rho_yy * (
+      (t - year_init) / total_years
+    )^2 * smoking_fake$cigsale[smoking_fake$year == t - 1] +
+    rnorm(
+      n = sum(smoking_fake$year == t),
+      mean = eta_mean,
+      sd = eta_sd
+    )
+}
+
+smoking_fake_ar_no_effect <- smoking_fake
+```
+
+```{r}
+smoking_fake <- smoking
+years <- unique(smoking_fake$year)
+
+smoking_fake$retprice[smoking_fake$year == 1] <- 
+  alpha0_retprice +
+  rnorm(
+    n = sum(smoking_fake$year == 1),
+    mean = eta_mean,
+    sd = eta_sd
+  )
+
+smoking_fake$cigsale[smoking_fake$year == 1] <- 
+  alpha0_cigsale +
+  rho *smoking_fake$retprice[smoking_fake$year == 1] +
+  rnorm(
+    n = sum(smoking_fake$year == 1),
+    mean = eta_mean,
+    sd = eta_sd
+  )
+
+for(
+  t in years[2:length(years)]
+) {
+  smoking_fake$retprice[smoking_fake$year == t] <- 
+    alpha0_retprice +
+    rho_zy * (
+      (t - (year_init + 10)) / total_years
+    )^2 * smoking_fake$cigsale[smoking_fake$year == t- 1] +
+    rho_zz * (
+      (t - year_init) / total_years
+    ) * smoking_fake$retprice[smoking_fake$year == t - 1] +
+    rnorm(
+      n = sum(smoking_fake$year == t),
+      mean = eta_mean,
+      sd = eta_sd
+    )
+  
+  smoking_fake$cigsale[smoking_fake$year == t] <- 
+    alpha0_cigsale +
+    rho * smoking_fake$retprice[smoking_fake$year == t - 1] +
+    rho_yy * (
+      (t - year_init) / total_years
+    )^2 * smoking_fake$cigsale[smoking_fake$year == t - 1] +
+    rnorm(
+      n = sum(smoking_fake$year == t),
+      mean = eta_mean,
+      sd = eta_sd
+    )
+  
+  smoking_fake$cigsale[smoking_fake$year == t &
+                         smoking_fake$state == "California"] <- 
+    smoking_fake$cigsale[smoking_fake$year == t &
+                         smoking_fake$state == "California"] * (
+                           1 - 
+                             runif(
+                               n = 1,
+                               te_unif_lower,
+                               te_unif_upper
+                             ) * (
+                               t > year_start
+                             )
+                         )
+    
+}
+
+smoking_fake_ar_some_effect <- smoking_fake
+```
+
+```{r}
+smoking_out_factor_noeffect <- 
+  smoking_fake_factor_no_effect %>% 
+  tidysynth::synthetic_control(
+    outcome = cigsale,
+    unit = state,
+    time = year,
+    i_unit = name_treated,
+    i_time = year_start,
+    generate_placebos = TRUE
+  ) %>% 
+  tidysynth::generate_predictor(
+    time_window = window_income_age,
+    ln_income = mean(lnincome, na.rm = TRUE),
+    youth = mean(age15to24, na.rm = TRUE)
+  ) %>% 
+  tidysynth::generate_predictor(
+    time_window = window_beer,
+    beer_sales = mean(beer, na.rm = TRUE)
+  ) %>% 
+  tidysynth::generate_predictor(
+    time_window = window_cigsale1,
+    cigsale_1 = cigsale
+  ) %>% 
+  tidysynth::generate_predictor(
+    time_window = window_cigsale2,
+    cigsale_2 = cigsale
+  ) %>% 
+  tidysynth::generate_predictor(
+    time_window = window_cigsale3,
+    cigsale_3 = cigsale
+  ) %>% 
+  tidysynth::generate_weights(
+    optimization_window = window_fit,
+    margin_ipop = margin_ipop,
+    sigf_ipop = sigf_ipop,
+    bound_ipop = bound_ipop
+  ) %>% 
+  tidysynth::generate_control()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_trends()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_differences()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_weights()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::grab_balance_table() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+smoking_fake_factor_no_effect
+smoking
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_placebos()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_placebos(
+    prune = FALSE
+  )
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::plot_mspe_ratio()
+```
+
+```{r}
+smoking_out_factor_noeffect %>% 
+  tidysynth::grab_significance() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r cache=TRUE}
+smoking_out_factor_noeffect_check <- 
+  call_synthetic_control(
+    data = smoking_fake_factor_no_effect,
+    name_treated = name_treated,
+    year_start = year_start,
+    window_income_age = window_income_age,
+    window_beer = window_beer,
+    window_cigsale1 = window_cigsale1,
+    window_cigsale2 = window_cigsale2,
+    window_cigsale3 = window_cigsale3,
+    margin_ipop = margin_ipop,
+    sigf_ipop = sigf_ipop,
+    bound_ipop = bound_ipop
+  )
+```
+
+```{r cache=TRUE}
+smoking_out_some_effect <- 
+  call_synthetic_control(
+    data = smoking_fake_factor_some_effect,
+    name_treated = name_treated,
+    year_start = year_start,
+    window_income_age = window_income_age,
+    window_beer = window_beer,
+    window_cigsale1 = window_cigsale1,
+    window_cigsale2 = window_cigsale2,
+    window_cigsale3 = window_cigsale3,
+    margin_ipop = margin_ipop,
+    sigf_ipop = sigf_ipop,
+    bound_ipop = bound_ipop
+  )
+```
+
+```{r}
+smoking_out_some_effect %>% 
+  tidysynth::plot_trends()
+```
+
+```{r}
+smoking_out_some_effect %>% 
+  tidysynth::plot_differences()
+```
 
 
+```{r}
+smoking_out_some_effect %>% 
+  tidysynth::plot_placebos()
+```
 
+```{r}
+smoking_out_some_effect %>% 
+  tidysynth::plot_mspe_ratio()
+```
 
+```{r}
+smoking_out_some_effect %>% 
+  tidysynth::grab_significance() %>% 
+  kbl() %>% 
+  kable_styling()
+```
 
+```{r cache=TRUE}
+smoking_out_ar_noeffect <- 
+  call_synthetic_control(
+    data = smoking_fake_ar_no_effect,
+    name_treated = name_treated,
+    year_start = year_start,
+    window_income_age = window_income_age,
+    window_beer = window_beer,
+    window_cigsale1 = window_cigsale1,
+    window_cigsale2 = window_cigsale2,
+    window_cigsale3 = window_cigsale3,
+    margin_ipop = margin_ipop,
+    sigf_ipop = sigf_ipop,
+    bound_ipop = bound_ipop
+  )
+```
 
+```{r}
+smoking_out_ar_noeffect %>%  
+  tidysynth::plot_trends()
+```
+
+```{r}
+smoking_out_ar_noeffect %>% 
+  tidysynth::plot_placebos()
+```
+
+```{r}
+smoking_out_ar_noeffect %>% 
+  tidysynth::plot_mspe_ratio()
+```
+
+```{r}
+smoking_out_ar_noeffect %>% 
+  tidysynth::grab_significance() %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r cache=TRUE}
+smoking_out_ar_some_effect <- 
+  call_synthetic_control(
+    data = smoking_fake_ar_some_effect,
+    name_treated = name_treated,
+    year_start = year_start,
+    window_income_age = window_income_age,
+    window_beer = window_beer,
+    window_cigsale1 = window_cigsale1,
+    window_cigsale2 = window_cigsale2,
+    window_cigsale3 = window_cigsale3,
+    margin_ipop = margin_ipop,
+    sigf_ipop = sigf_ipop,
+    bound_ipop = bound_ipop
+  )
+```
+
+```{r}
+smoking_out_ar_some_effect %>% 
+  tidysynth::plot_trends()
+```
+
+```{r}
+smoking_out_ar_some_effect %>% 
+  tidysynth::plot_placebos()
+```
+
+```{r}
+smoking_out_ar_some_effect %>% 
+  tidysynth::plot_mspe_ratio()
+```
+
+```{r}
+smoking_out_ar_some_effect %>% 
+  tidysynth::grab_significance() %>% 
+  kbl() %>% 
+  kable_styling()
+```
 
 
 
