@@ -1,0 +1,983 @@
+---
+title: "第10章"
+format: 
+  html:
+    theme: journal
+    highlight-style: pygments
+    page-layout: article
+number-sections: true
+toc: true
+toc-depth: 3
+toc-location: left
+code-fold: show
+date: "最終更新 `r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, echo = TRUE, fig.align = "center", warning = FALSE)
+library(ggplot2)
+library(magrittr)
+library(kableExtra)
+library(modelsummary)
+library(CausalInferenceTextbook)
+color_main <- scales::viridis_pal(option = "C")(1)
+```
+
+# [10-2]処置割り当てが多期間にわたる場合の推定
+
+```{r}
+N <- 1000
+T0 <- 4
+T1 <- 6
+T <- T0 + T1
+```
+
+```{r}
+mean_tau_i_multi <- 0.1
+sd_tau_i_multi <- 0.2
+scale_5 <- 1
+scale_6 <- -2.5
+scale_7 <- -1.75
+scale_8 <- -1
+```
+
+```{r}
+slope_x1 <- -0.2
+slope_x2 <- -0.1
+```
+
+```{r}
+set.seed(1)
+df_design_novoc <- 
+  generate_df_multiperiod(
+    N = N,
+    T = T,
+    T1 = T1,
+    T0 = T0,
+    diff_trend = FALSE,
+    mean_tau_i = mean_tau_i_multi,
+    sd_tau_i = sd_tau_i_multi,
+    scale_5 = scale_5,
+    scale_6 = scale_6,
+    scale_7 = scale_7,
+    scale_8 = scale_8
+  )
+
+df_design_novoc %>% 
+  dplyr::glimpse()
+```
+
+```{r}
+df_design_novoc %>% 
+  dplyr::group_by(
+    g5_i,
+    g6_i,
+    g7_i,
+    g8_i
+  ) %>% 
+  dplyr::summarise(
+    fraction = length(id)
+  ) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::mutate(
+    fraction = fraction / sum(fraction)
+  ) %>% 
+  dplyr::arrange(
+    g8_i,
+    g7_i,
+    g6_i,
+    g5_i
+  )
+```
+
+```{r}
+mean_abs_tau_i <- 
+  (
+    mean_tau_i_multi + 
+      sd_tau_i_multi * (dnorm((-mean_tau_i_multi) / sd_tau_i_multi)) / 
+      (1 - pnorm((-mean_tau_i_multi) / sd_tau_i_multi))
+   ) * 
+    pnorm(mean_tau_i_multi / sd_tau_i_multi) -
+  (
+    mean_tau_i_multi -
+     sd_tau_i_multi * (dnorm((-mean_tau_i_multi) / sd_tau_i_multi)) / 
+     (pnorm((-mean_tau_i_multi) / sd_tau_i_multi))
+   ) * 
+    (1 - pnorm(mean_tau_i_multi / sd_tau_i_multi))
+```
+
+```{r}
+att_pop_nocov_group <- 
+  df_design_novoc %>% 
+    dplyr::filter(
+      time > T0,
+      g5_i == 1
+    ) %>% 
+    dplyr::summarise(
+      group = "5",
+      att_pop_nocov = mean(unique(tau_t)) * scale_5 * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_novoc$z_it)
+    )
+
+att_pop_nocov_group <- 
+  rbind(
+    att_pop_nocov_group,
+    df_design_novoc %>% 
+    dplyr::filter(
+      time > T0 + 1,
+      g6_i == 1
+    ) %>% 
+    dplyr::summarise(
+      group = "6",
+      att_pop_nocov = mean(unique(tau_t)) * scale_6 * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_novoc$z_it)
+    )
+  )
+
+att_pop_nocov_group <- 
+  rbind(
+    att_pop_nocov_group,
+    df_design_novoc %>% 
+    dplyr::filter(
+      time > T0 + 2,
+      g7_i == 1
+    ) %>% 
+    dplyr::summarise(
+      group = "7",
+      att_pop_nocov = mean(unique(tau_t)) * scale_7 * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_novoc$z_it)
+    )
+  )
+
+att_pop_nocov_group <- 
+  rbind(
+    att_pop_nocov_group,
+    df_design_novoc %>% 
+    dplyr::filter(
+      time > T0 + 3,
+      g8_i == 1
+    ) %>% 
+    dplyr::summarise(
+      group = "8",
+      att_pop_nocov = mean(unique(tau_t)) * scale_8 * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_novoc$z_it)
+    )
+  )
+
+att_pop_nocov_group %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+att_pop_nocov <- 
+  att_pop_nocov_group$att_pop_nocov %*%
+  att_pop_nocov_group$fraction_within_group
+
+att_pop_nocov
+```
+
+```{r}
+att_sample_nocov_group <- 
+  df_design_novoc %>% 
+  dplyr::filter(
+    group_i > 0
+  ) %>% 
+  dplyr::group_by(
+    group_i
+  ) %>% 
+  dplyr::summarise(
+    att_sample = sum(tau_it * (time >= group_i)) / sum(time >= group_i)
+  )
+
+att_sample_nocov_group
+```
+
+```{r}
+att_sample_nocov <- 
+  df_design_novoc %>%
+  dplyr::filter(
+    z_it == 1
+  ) %>% 
+  dplyr::summarise(
+    att_sample_nocov = mean(tau_it)
+  )
+
+att_sample_nocov
+```
+
+```{r}
+set.seed(1)
+df_design_cov <- 
+  generate_df_multiperiod(
+    N = N,
+    T = T,
+    T1 = T1,
+    T0 = T0,
+    diff_trend = TRUE,
+    mean_tau_i = mean_tau_i_multi,
+    sd_tau_i = sd_tau_i_multi,
+    scale_5 = scale_5,
+    scale_6 = scale_6,
+    scale_7 = scale_7,
+    scale_8 = scale_8,
+    slope_x1 = slope_x1,
+    slope_x2 = slope_x2
+  )
+
+df_design_cov %>% 
+  dplyr::glimpse()
+```
+
+```{r}
+att_pop_cov_group <- 
+  df_design_cov %>% 
+    dplyr::filter(
+      time > T0,
+      g5_i == 1
+    ) %>%
+    dplyr::summarize(
+      group = "5",
+      att_pop_cov = mean(unique(tau_t)) * (scale_5) * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_cov$z_it)
+    )
+
+att_pop_cov_group <- 
+  rbind(
+    att_pop_cov_group,
+    df_design_cov %>% 
+      dplyr::filter(
+        time > T0 + 1,
+        g6_i == 1
+      ) %>%
+      dplyr::summarize(
+        group = "6",
+        att_pop_cov = mean(unique(tau_t)) * (scale_6) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_cov$z_it)
+      ) 
+  )
+
+att_pop_cov_group <-
+  rbind(
+    att_pop_cov_group, 
+    df_design_cov %>% 
+      dplyr::filter(
+        time > T0 + 2,
+        g7_i == 1
+      ) %>%
+      dplyr::summarize(
+        group = "7",
+        att_pop_cov = mean(unique(tau_t)) * (scale_7) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_cov$z_it)
+      )
+  )
+att_pop_cov_group <- 
+  rbind(
+    att_pop_cov_group, 
+    df_design_cov %>% 
+      dplyr::filter(
+        time > T0 + 3,
+        g8_i == 1
+      ) %>%
+     dplyr::summarize(
+        group = "8",
+        att_pop_cov = mean(unique(tau_t)) * (scale_8) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_cov$z_it)
+      )
+  )
+
+att_pop_cov_group
+```
+
+
+```{r}
+df_design_cov <- 
+  df_design_cov %>% 
+  dplyr::mutate(
+    group =
+      dplyr::if_else(
+        group_i < 5,
+        "control",
+        "treat"
+      ),
+    group_x = 
+      dplyr::if_else(
+        x1_i == 1,
+        dplyr::if_else(
+          x2_i == 1,
+          "1,1",
+          "1,0"
+        ),
+        dplyr::if_else(
+          x2_i == 1,
+          "0,1",
+          "0,0"
+        )
+      )
+  )
+
+df_compare <- 
+  df_design_cov %>% 
+  dplyr::filter(
+    time == 3 | time == 4
+  ) %>% 
+  tidyr::pivot_wider(
+    id_cols = 
+      c(
+        id,
+        group,
+        group_x
+      ),
+    names_from = time,
+    names_prefix = "y",
+    values_from = y_it
+  )
+
+df_compare <- 
+  df_compare %>% 
+  dplyr::mutate(
+    dif = y4 - y3
+  )
+
+g <- 
+  df_compare %>% 
+  ggplot(
+    aes(
+      x = y3,
+      y = dif,
+      colour = group
+    )
+  ) +
+  geom_point() +
+  scale_color_viridis_d() +
+  ylim(
+    c(
+      -0.25,
+      0.25
+    ) 
+  ) +
+  xlim(
+    c(
+      4.2,
+      6.4
+    )
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "bottom"
+  )
+
+g
+```
+
+```{r}
+purrr::map(
+  .x = c(
+    "0,0",
+    "1,0",
+    "1,1"
+  ),
+  .f = function(group_name) {
+    df_compare %>% 
+      dplyr::filter(
+        group_x == group_name
+      ) %>% 
+      ggplot(
+        aes(
+          x = y3,
+          y = dif,
+          colour = group
+        )
+      ) +
+      geom_point() +
+      scale_color_viridis_d() +
+      ylim(
+        -0.25,
+        0.25
+      ) +
+      xlim(
+        4.2,
+        6.4
+      ) +
+      ggtitle(
+        label = paste0(
+          "(x1,x2) = (",group_name, ")"
+        )
+      ) +
+      theme_classic() +
+      theme(
+        legend.position = "bottom"
+      )
+  }
+)
+```
+
+```{r}
+set.seed(1)
+df_design_nyt <- 
+  generate_df_multiperiod_nyt(
+    N = N,
+    T = T,
+    T1 = T1,
+    T0 = T0,
+    diff_trend = FALSE,
+    mean_tau_i = mean_tau_i_multi,
+    sd_tau_i = sd_tau_i_multi,
+    scale_5 = scale_5,
+    scale_6 = scale_6,
+    scale_7 = scale_7,
+    scale_8 = scale_8
+  )
+```
+
+```{r}
+att_pop_nyt_group <- 
+  df_design_nyt %>% 
+    dplyr::filter(
+      time > T0,
+      g5_i == 1
+    ) %>%
+    dplyr::summarize(
+      group = "5",
+      att_pop_nyt = mean(unique(tau_t)) * (scale_5) * mean_abs_tau_i,
+      fraction_within_group = sum(z_it) / sum(df_design_nyt$z_it)
+    )
+
+att_pop_nyt_group <- 
+  rbind(
+    att_pop_nyt_group,
+    df_design_nyt %>% 
+      dplyr::filter(
+        time > T0 + 1,
+        g6_i == 1
+      ) %>%
+      dplyr::summarize(
+        group = "6",
+        att_pop_nyt = mean(unique(tau_t)) * (scale_6) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_nyt$z_it)
+      ) 
+  )
+
+att_pop_nyt_group <-
+  rbind(
+    att_pop_nyt_group, 
+    df_design_nyt %>% 
+      dplyr::filter(
+        time > T0 + 2,
+        g7_i == 1
+      ) %>%
+      dplyr::summarize(
+        group = "7",
+        att_pop_nyt = mean(unique(tau_t)) * (scale_7) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_nyt$z_it)
+      )
+  )
+att_pop_nyt_group <- 
+  rbind(
+    att_pop_nyt_group, 
+    df_design_nyt %>% 
+      dplyr::filter(
+        time > T0 + 3,
+        g8_i == 1
+      ) %>%
+     dplyr::summarize(
+        group = "8",
+        att_pop_nyt = mean(unique(tau_t)) * (scale_8) * mean_abs_tau_i,
+        fraction_within_group = sum(z_it) / sum(df_design_nyt$z_it)
+      )
+  )
+att_pop_nyt_group <- 
+  rbind(
+    att_pop_nyt_group,
+    df_design_nyt %>% 
+      dplyr::filter(
+        time > T0 + 5,
+        g10_i == 1
+      ) %>% 
+      dplyr::summarise(
+        group = "10",
+        att_pop_nyt = 0,
+        fraction_within_group = sum(z_it) / sum(df_design_nyt$z_it)
+      )
+  )
+
+att_pop_nyt_group %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_design_novoc_observed <- 
+  df_design_novoc %>% 
+  dplyr::select(
+    id,
+    time,
+    group_i,
+    g5_i,
+    g6_i,
+    g7_i,
+    g8_i,
+    z5_it,
+    z6_it,
+    z7_it,
+    z8_it,
+    z_it,
+    y_it
+  )
+
+dplyr::glimpse(df_design_novoc_observed)
+```
+
+```{r}
+df_design_novoc_observed <- 
+  df_design_novoc_observed %>% 
+  dplyr::mutate(
+    z_it_t = z_it * time + z_it * group_i * 100
+  ) %>% 
+  fastDummies::dummy_cols(
+    select_columns = "z_it_t"
+  ) %>% 
+  dplyr::select(
+    -z_it_t_0
+  )
+
+dplyr::glimpse(df_design_novoc_observed)
+
+fml <- 
+  as.formula(
+    paste(
+      "y_it ~ ",
+      paste(
+        grep(
+          "z_it_t_",
+          names(df_design_novoc_observed),
+          value = TRUE
+          ),
+        collapse = " + "
+        )
+      )
+  )
+
+lsdv <- 
+  plm::plm(
+    data = df_design_novoc_observed,
+    formula = fml,
+    effect = "twoways",
+    index = c(
+      "id",
+      "time"
+    )
+  )
+
+clubSandwich::coef_test(
+  obj = lsdv,
+  vcov = "CR1",
+  cluster = "id",
+  test = "naive-t"
+) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_compare <- 
+  tibble::tibble(
+    group_i = c(5, 6, 7, 8),
+    did_lsdv = 
+      c(
+        mean(
+          lsdv$coefficients[
+          grep(
+            "z_it_t_5",
+            names(lsdv$coefficients),
+            value = TRUE
+          )
+        ],
+        na.rm = TRUE
+        ),
+        mean(
+          lsdv$coefficients[
+          grep(
+            "z_it_t_6",
+            names(lsdv$coefficients),
+            value = TRUE
+          )
+        ],
+        na.rm = TRUE
+        ),
+        mean(
+          lsdv$coefficients[
+          grep(
+            "z_it_t_7",
+            names(lsdv$coefficients),
+            value = TRUE
+          )
+        ],
+        na.rm = TRUE
+        ),
+        mean(
+          lsdv$coefficients[
+          grep(
+            "z_it_t_8",
+            names(lsdv$coefficients),
+            value = TRUE
+          )
+        ],
+        na.rm = TRUE
+        )
+      ),
+    proportion = 
+      c(
+        sum(df_design_novoc_observed$z5_it) /
+          sum(df_design_novoc_observed$z_it),
+        sum(df_design_novoc_observed$z6_it) /
+          sum(df_design_novoc_observed$z_it),
+        sum(df_design_novoc_observed$z7_it) /
+          sum(df_design_novoc_observed$z_it),
+        sum(df_design_novoc_observed$z8_it) /
+          sum(df_design_novoc_observed$z_it)
+      )
+  )
+
+df_compare %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_compare %>% 
+  dplyr::summarise(
+    did_lsdv_average = sum(did_lsdv * proportion)
+  ) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+result_did <- 
+  did::att_gt(
+    yname = "y_it",
+    tname = "time",
+    idname = "id",
+    gname = "group_i",
+    data = df_design_novoc_observed
+  )
+
+summary(result_did)
+```
+
+```{r}
+did::ggdid(result_did)
+```
+
+```{r}
+res <- 
+  did::aggte(
+    MP = result_did,
+    type = "group"
+  ) 
+
+df_cs <- 
+  tibble::tibble(
+    group_i = res$egt,
+    did_cs = res$att.egt
+  )
+
+df_compare <- 
+  dplyr::left_join(
+    df_compare,
+    df_cs,
+    by = "group_i"
+  )
+
+df_compare %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did,
+    type = "simple"
+  )
+)
+```
+
+```{r}
+result_did_invalid <- 
+  did::att_gt(
+    yname = "y_it",
+    tname = "time",
+    idname = "id",
+    gname = "group_i",
+    data = df_design_novoc,
+    bstrap = FALSE,
+    cband = FALSE
+  ) 
+
+summary(result_did_invalid)
+```
+
+```{r}
+df_design_cov_observed <- 
+  df_design_cov %>% 
+  dplyr::select(
+    id,
+    time,
+    group_i,
+    g5_i,
+    g6_i,
+    g7_i,
+    g8_i,
+    z5_it,
+    z6_it,
+    z7_it,
+    z8_it,
+    z_it,
+    x1_i,
+    x2_i,
+    y_it
+  )
+
+dplyr::glimpse(df_design_cov_observed)
+```
+
+```{r}
+result_did_cov <- 
+  did::att_gt(
+    yname = "y_it",
+    tname = "time",
+    idname = "id",
+    gname = "group_i",
+    data = df_design_cov_observed
+  )
+
+summary(result_did_cov)
+```
+
+```{r}
+did::ggdid(result_did_cov)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_cov,
+    type = "group"
+  )
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_cov,
+    type = "simple"
+  )
+)
+```
+
+```{r}
+result_did_cov <- 
+  did::att_gt(
+    yname = "y_it",
+    tname = "time",
+    idname = "id",
+    gname = "group_i",
+    data = df_design_cov_observed,
+    xformla = ~ 1 + x1_i + x2_i
+  )
+
+summary(result_did_cov)
+```
+
+```{r}
+did::ggdid(
+  result_did_cov
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_cov,
+    type = "group"
+  )
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_cov,
+    type = "simple"
+  )
+)
+```
+
+```{r}
+res_nocov <- 
+  did::aggte(
+    MP = result_did,
+    type = "simple"
+  )
+
+res_cov <- 
+  did::aggte(
+    MP = result_did_cov,
+    type = "simple"
+  )
+
+tibble::tibble(
+  case = c(
+    "nocov",
+    "cov"
+  ),
+  ATT = c(
+    res_nocov$overall.att,
+    res_cov$overall.att
+  ),
+  se = c(
+    res_nocov$overall.se,
+    res_cov$overall.se
+  )
+) %>% 
+  kbl() %>% 
+  kable_styling()
+```
+
+```{r}
+df_design_nyt_observed <- 
+  df_design_nyt %>% 
+  dplyr::select(
+    id,
+    time,
+    group_i,
+    g5_i,
+    g6_i,
+    g7_i,
+    g8_i,
+    g10_i,
+    z5_it,
+    z6_it,
+    z7_it,
+    z8_it,
+    z10_it,
+    z_it,
+    x1_i,
+    x2_i,
+    y_it
+  )
+
+dplyr::glimpse(df_design_nyt_observed)
+```
+
+```{r}
+try(
+  result_did_nyt <- 
+    did::att_gt(
+      yname = "y_it",
+      idname = "id",
+      tname = "time",
+      gname = "group_i",
+      data = df_design_nyt_observed
+    )
+)
+```
+
+```{r}
+result_did_nyt <- 
+  did::att_gt(
+    yname = "y_it",
+    idname = "id",
+    tname = "time",
+    gname = "group_i",
+    data = df_design_nyt_observed,
+    control_group = "notyettreated"
+  )
+
+summary(result_did_nyt)
+```
+
+```{r}
+did::ggdid(
+  result_did_nyt
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_nyt,
+    type = "group"
+  )
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_nyt,
+    type = "simple"
+  )
+)
+```
+
+```{r}
+result_did_nyt_trunc <- 
+  did::att_gt(
+    yname = "y_it",
+    idname = "id",
+    tname = "time",
+    gname = "group_i",
+    data = df_design_nyt_observed[df_design_nyt_observed$time < 10,],
+    control_group = "nevertreated",
+    alp = 0.01
+  )
+
+summary(result_did_nyt_trunc)
+```
+
+```{r}
+did::ggdid(
+  result_did_nyt_trunc
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_nyt_trunc,
+    type = "group"
+  )
+)
+```
+
+```{r}
+print(
+  did::aggte(
+    MP = result_did_nyt_trunc,
+    type = "simple"
+  )
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
